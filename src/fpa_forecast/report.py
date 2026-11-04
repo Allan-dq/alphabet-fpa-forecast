@@ -365,7 +365,10 @@ Details: [P&L](pnl_forecast.md) · [backtest](backtest_summary.md) · [variance]
 def exec_pdf(sections: dict, qs: list[str], last: str, filed: str) -> None:
     import re
 
+    from reportlab import rl_config
     from reportlab.lib.colors import HexColor
+
+    rl_config.invariant = 1  # no timestamps or random IDs: identical bytes on every run
     from reportlab.lib.pagesizes import letter
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.lib.units import inch

@@ -56,7 +56,7 @@ def main() -> None:
     sql_out = REPORTS_DIR / "sql"
     sql_out.mkdir(exist_ok=True)
     for view in ["pnl_quarterly", "revenue_mix", "opex_ratios", "segment_margin", "ttm_metrics"]:
-        sql_layer.query(con, f"SELECT * FROM {view} ORDER BY 1").to_csv(sql_out / f"{view}.csv", index=False)
+        sql_layer.query(con, f"SELECT * FROM {view} ORDER BY ALL").to_csv(sql_out / f"{view}.csv", index=False)
     sql_layer.query(con, (REPORTS_DIR.parent / "sql" / "queries" / "backtest_accuracy.sql").read_text()).to_csv(
         sql_out / "backtest_accuracy.csv", index=False)
 
