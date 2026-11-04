@@ -1,0 +1,23 @@
+line,line_name,category,parent,sort_order
+search_other,Google Search & other,revenue,google_services_revenue,1
+youtube_ads,YouTube ads,revenue,google_services_revenue,2
+google_network,Google Network,revenue,google_services_revenue,3
+subscriptions_platforms_devices,"Google subscriptions, platforms & devices",revenue,google_services_revenue,4
+google_services_revenue,Google Services (segment),segment_rev,total_revenue,5
+google_cloud,Google Cloud,revenue,total_revenue,6
+other_bets_revenue,Other Bets,revenue,total_revenue,7
+hedging_gains_losses,Hedging gains (losses),revenue,total_revenue,8
+total_revenue,Total revenues,total,,9
+cost_of_revenues,Cost of revenues,cost,total_costs_expenses,10
+research_development,Research & development,cost,total_costs_expenses,11
+sales_marketing,Sales & marketing,cost,total_costs_expenses,12
+general_administrative,General & administrative,cost,total_costs_expenses,13
+ec_fines,European Commission fines,cost,total_costs_expenses,14
+total_costs_expenses,Total costs and expenses,total,,15
+operating_income,Operating income,total,,16
+oi_google_services,Google Services,segment_oi,operating_income,17
+oi_google_cloud,Google Cloud,segment_oi,operating_income,18
+oi_other_bets,Other Bets,segment_oi,operating_income,19
+oi_alphabet_level,Alphabet-level activities,segment_oi,operating_income,20
+capex,Capital expenditures,cash_flow,,21
+total_revenue_ex_hedging,Total revenues excl. hedging,total,,22

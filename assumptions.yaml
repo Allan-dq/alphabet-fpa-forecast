@@ -1,0 +1,54 @@
+# Planning assumptions for the next-4-quarter P&L, variance analysis and scenarios.
+# Revenue comes from the selected forecast model (see reports/backtest_summary.md).
+# Costs are planned as a share of total revenue. Every value here is either an
+# explicit number or `auto`, which the pipeline resolves from the data and prints
+# in reports/pnl_forecast.md so the number used is always visible.
+
+holdout_quarter: "2026Q3"   # latest reported quarter; kept out of the backtest
+pnl_horizon_quarters: 4
+chart_horizon_quarters: 8
+
+revenue:
+  # FX cash-flow hedging results are not planned; Alphabet does not guide them.
+  hedging_gains_losses_m: 0
+
+costs:
+  # method: same_quarter_ly_plus_trend
+  #   ratio(q) = ratio(same quarter last year) + trend_pp
+  #   keeps each quarter's seasonality (e.g. Q4 sales & marketing).
+  #   trend_pp: auto = mean year-over-year change in the ratio over the last 4 reported quarters.
+  # method: ttm_ratio
+  #   ratio(q) = trailing-4-quarter ratio; used where the line is lumpy, not seasonal.
+  cost_of_revenues:
+    method: same_quarter_ly_plus_trend
+    # Judgment override: the ratio fell over the last 4 quarters, but capex rose
+    # to ~40% of revenue in 2026Q3, which lifts depreciation in cost of revenues.
+    # Plan the ratio flat year over year instead of extending the decline.
+    trend_pp: 0.0
+  research_development:
+    method: same_quarter_ly_plus_trend
+    trend_pp: auto
+  sales_marketing:
+    method: same_quarter_ly_plus_trend
+    trend_pp: auto
+  general_administrative:
+    # Legal and regulatory charges make G&A lumpy (EC fines, settlements).
+    method: ttm_ratio
+
+scenarios:
+  # Shifts to year-over-year revenue growth, in percentage points, applied to each forecast quarter.
+  cases:
+    base:     {google_cloud: 0.0,  search_other: 0.0}
+    upside:   {google_cloud: 5.0,  search_other: 2.0}
+    downside: {google_cloud: -5.0, search_other: -2.0}
+  sensitivity_grid:
+    google_cloud: [-5.0, -2.5, 0.0, 2.5, 5.0]
+    search_other: [-2.0, -1.0, 0.0, 1.0, 2.0]
+  # How costs respond to scenario revenue within the 4-quarter window:
+  #   variable -> cost stays at the planned % of revenue
+  #   fixed    -> cost stays at the base-case dollar amount (headcount and plans don't flex within a year)
+  cost_behavior:
+    cost_of_revenues: variable
+    research_development: fixed
+    sales_marketing: fixed
+    general_administrative: fixed

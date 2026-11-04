@@ -287,6 +287,7 @@ def add_derived(q: pd.DataFrame) -> pd.DataFrame:
     """Lines that are identities of tagged lines (documented in methodology)."""
     w = q.pivot(index="fiscal_quarter", columns="line", values="value_m")
     meta = q.set_index(["fiscal_quarter", "line"])
+    meta_src: dict = {}
     extra = []
 
     def add(line, fq, value, derivation, sources):
@@ -321,6 +322,16 @@ def add_derived(q: pd.DataFrame) -> pd.DataFrame:
                 add("ec_fines", fq, fines, "residual_total_costs_minus_lines", srcs(fq, COST_LINES + ["total_costs_expenses"]))
     if extra:
         q = pd.concat([q, pd.DataFrame(extra)], ignore_index=True)
+    meta_src = q.set_index(["fiscal_quarter", "line"])["source_accessions"].fillna("").to_dict()
+    # Forecasting target: operating revenue, i.e. total revenue excluding FX hedging.
+    w2 = q.pivot(index="fiscal_quarter", columns="line", values="value_m")
+    ex = (w2["total_revenue"] - w2["hedging_gains_losses"]).dropna()
+    q = pd.concat([q, pd.DataFrame([dict(line="total_revenue_ex_hedging", fiscal_quarter=fq, value_m=v,
+                                         first_value_m=np.nan, derivation="total_minus_hedging", restated=False,
+                                         n_vintages=0, source_accessions=";".join(dict.fromkeys(
+                                             meta_src.get((fq, "total_revenue"), "").split(";")
+                                             + meta_src.get((fq, "hedging_gains_losses"), "").split(";"))).strip(";"),
+                                         first_accessions="") for fq, v in ex.items()])], ignore_index=True)
     q["period_end"] = pd.PeriodIndex(q["fiscal_quarter"], freq="Q").end_time.date
     q["period_start"] = pd.PeriodIndex(q["fiscal_quarter"], freq="Q").start_time.date
     return q

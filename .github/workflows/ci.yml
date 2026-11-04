@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  pipeline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: |
+          pip install -r requirements.txt
+          pip install -e . --no-deps
+      - name: Data tests (committed dataset, no network)
+        run: pytest -q tests/test_data.py tests/test_sql.py
+      - name: Run the full pipeline
+        run: python run_pipeline.py
+      - name: All tests
+        run: pytest -q
+      - name: Regenerated numbers match the committed ones
+        run: python scripts/check_reproducible.py

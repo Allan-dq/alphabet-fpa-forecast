@@ -1,0 +1,23 @@
+{
+  "model": "AutoARIMA",
+  "method": "BottomUp",
+  "rule": "lowest mean MASE across the 8 hierarchy series, all backtest windows, horizons 1-4, coherent forecasts only",
+  "holdout_quarter": "2026Q3",
+  "backtest_cutoffs": [
+    "2023Q2",
+    "2023Q3",
+    "2023Q4",
+    "2024Q1",
+    "2024Q2",
+    "2024Q3",
+    "2024Q4",
+    "2025Q1",
+    "2025Q2",
+    "2025Q3",
+    "2025Q4",
+    "2026Q1"
+  ],
+  "last_actual": "2026Q3",
+  "first_quarter": "2019Q1",
+  "last_filed": "2026-10-29"
+}
