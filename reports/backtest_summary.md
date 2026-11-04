@@ -50,12 +50,12 @@ forecasts per series. Training data start in 2019Q1.
 | 11 | AutoETS | base | 0.726 | 8.7% | 8.6% | 0.885 | 78.3% | 88.7% |
 | 12 | RWD | BottomUp | 0.757 | 9.6% | 5.3% | 0.549 | 72.9% | 83.9% |
 | 13 | RWD | MinT | 0.757 | 9.6% | 5.3% | 0.549 | 77.7% | 88.1% |
-| 14 | RWD | base | 0.757 | 9.6% | 5.3% | 0.549 | 78.9% | 88.4% |
-| 15 | RWD | TopDown | 0.757 | 9.6% | 5.3% | 0.549 | 69.3% | 80.7% |
+| 14 | RWD | TopDown | 0.757 | 9.6% | 5.3% | 0.549 | 69.3% | 80.7% |
+| 15 | RWD | base | 0.757 | 9.6% | 5.3% | 0.549 | 78.9% | 88.4% |
 | 16 | AutoETS | TopDown | 0.803 | 9.4% | 8.6% | 0.885 | 50.6% | 64.0% |
-| 17 | SeasonalNaive | TopDown | 1.291 | 15.0% | 14.0% | 1.440 | 74.7% | 83.9% |
-| 18 | SeasonalNaive | BottomUp | 1.291 | 15.0% | 14.0% | 1.440 | 58.0% | 89.0% |
-| 19 | SeasonalNaive | MinT | 1.291 | 15.0% | 14.0% | 1.440 | 65.8% | 89.9% |
+| 17 | SeasonalNaive | BottomUp | 1.291 | 15.0% | 14.0% | 1.440 | 58.0% | 89.0% |
+| 18 | SeasonalNaive | MinT | 1.291 | 15.0% | 14.0% | 1.440 | 65.8% | 89.9% |
+| 19 | SeasonalNaive | TopDown | 1.291 | 15.0% | 14.0% | 1.440 | 74.7% | 83.9% |
 | 20 | SeasonalNaive | base | 1.291 | 15.0% | 14.0% | 1.440 | 70.2% | 92.9% |
 
 Files: `backtest_overall.csv`, `backtest_per_line.csv`, `backtest_by_horizon.csv`.

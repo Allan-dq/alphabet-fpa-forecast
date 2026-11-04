@@ -191,11 +191,17 @@ def evaluate(bt: pd.DataFrame) -> dict[str, pd.DataFrame]:
     total = per_line[per_line["line"] == "total_revenue_ex_hedging"].set_index(["model", "method"])
     overall = overall.join(total[["wape", "mase", "mape"]].add_prefix("total_"), on=["model", "method"])
     by_h = score(bt, ["model", "method", "horizon"])
-    return {"per_line": per_line, "overall": overall.sort_values("mean_mase").reset_index(drop=True), "by_horizon": by_h}
+    # Round before sorting so float noise across platforms cannot reorder ties (e.g. SeasonalNaive,
+    # whose point forecasts are identical under every reconciliation method).
+    overall = (overall.assign(_k=overall["mean_mase"].round(9))
+               .sort_values(["_k", "model", "method"]).drop(columns="_k").reset_index(drop=True))
+    return {"per_line": per_line, "overall": overall, "by_horizon": by_h}
 
 
 def select(overall: pd.DataFrame) -> dict:
-    coherent = overall[overall["method"].isin(COHERENT_METHODS)].sort_values("mean_" + SELECTION_METRIC)
+    coherent = overall[overall["method"].isin(COHERENT_METHODS)]
+    coherent = (coherent.assign(_k=coherent["mean_" + SELECTION_METRIC].round(9))
+                .sort_values(["_k", "model", "method"]))
     best = coherent.iloc[0]
     return {"model": best["model"], "method": best["method"], "rule": f"lowest mean {SELECTION_METRIC.upper()} "
             "across the 8 hierarchy series, all backtest windows, horizons 1-4, coherent forecasts only"}
