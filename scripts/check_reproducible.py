@@ -41,6 +41,10 @@ for f in FILES:
     close = np.isclose(new[num].to_numpy(float), old[num].to_numpy(float), rtol=RTOL, atol=ATOL, equal_nan=True)
     if not close.all():
         bad.append(f"{f}: {int((~close).sum())} numbers differ beyond rtol={RTOL}")
+        rows, cols = np.where(~close)
+        for r, c in list(zip(rows, cols))[:25]:
+            key = " ".join(str(new.iloc[r][k]) for k in other)
+            print(f"   {f} | {key} | {num[c]}: committed={old[num].iloc[r, c]!r} regenerated={new[num].iloc[r, c]!r}")
     print(f"{f}: {'OK' if close.all() else 'DIFF'}")
 
 if bad:
