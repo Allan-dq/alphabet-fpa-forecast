@@ -17,6 +17,8 @@ FILES = [
     "reports/variance_2026Q3.csv",
     "reports/scenarios.csv",
     "reports/sensitivity_operating_margin.csv",
+    "reports/track_record.csv",
+    "reports/experiment_e2_cost_of_revenues.csv",
 ]
 RTOL, ATOL = 1e-4, 1e-3
 

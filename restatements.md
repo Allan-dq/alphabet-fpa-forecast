@@ -30,6 +30,10 @@ The dataset always uses the latest available basis. `first_value_m` keeps the or
 - **G&A and operating income:** 2017 is on the pre-2019 basis (performance fees inside G&A); 2018 onward excludes them.
 - **Revenue by type:** only available on a consistent basis from 2019Q1. The FY2019 earnings release (8-K, Feb 2020) gave Q4 2018 on the new basis, but Q1–Q3 2018 were never published that way, so the forecasting hierarchy starts in 2019Q1. Total revenue is available from 2017Q1.
 
+### Other definition changes found while adding lines
+- **Depreciation.** The FY2023 10-K (0001652044-24-000022) replaced the cash-flow tag "depreciation and impairment on disposition of property and equipment" with `us-gaap:Depreciation`. The two differ: FY2021 is $11,555M under the old tag and $10,273M under the new one. Only the new tag is used, so quarterly depreciation starts in 2023Q1.
+- **Revenue by geography.** In 2017–2018 filings the four regions sum to total revenue, i.e. hedging gains (losses) were allocated to regions. From the 2020 filings onward (2019 comparatives) the regions exclude hedging, and 2019Q1–Q3 are flagged as restated by $2–123M per region. Regional growth across 2019 therefore has a small break.
+
 ## 2024–2026 filings
 Every filing from 2024 to 2026 contains the standard sentence that certain prior-period amounts were reclassified. **None of the lines tracked here changed by more than $1M between vintages in those filings.** If a reclassification happened in 2024–2025, it did not move revenue by type, segment revenue, cost lines, total or segment operating income, or capex by more than $1M in any quarter.
 

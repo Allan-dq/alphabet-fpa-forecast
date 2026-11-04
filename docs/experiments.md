@@ -60,3 +60,9 @@ Seasonal naive is shown as the reference.
 ## Results
 
 Results are written to `reports/experiments.md` by `python run_pipeline.py`.
+
+## Amendments (logged after the results, never edited above)
+
+- **2026-11-04, E2.** The pre-registered condition for adopting the depreciation driver was met: lower mean absolute error. The driver was **not adopted** anyway, because its fitted pass-through coefficient s is negative at every origin where it could be estimated. That would make a higher depreciation share *lower* the cost-of-revenues ratio, which means the regression is fitting the ratio's downward trend, not depreciation.
+  - Instead, the cost-of-revenues assumption reverted from the v0.1 judgment override (+0.0pp) to the default `auto` trend rule that R&D and S&M use. The experiment showed the override overstated the ratio by about 1.5pp.
+  - The `auto` rule also had the lowest error in E2. That was visible before the switch and is disclosed in `reports/experiments.md`.

@@ -4,7 +4,8 @@ import pytest
 
 from fpa_forecast import sql_layer
 
-VIEWS = ["pnl_quarterly", "revenue_mix", "opex_ratios", "segment_margin", "ttm_metrics", "forecast_vs_actual"]
+VIEWS = ["pnl_quarterly", "revenue_mix", "opex_ratios", "segment_margin", "ttm_metrics", "forecast_vs_actual",
+         "revenue_geography", "fx_exposure"]
 
 
 @pytest.fixture(scope="module")
@@ -64,3 +65,16 @@ def test_forecast_vs_actual_join(con):
     df = sql_layer.query(c, "SELECT * FROM forecast_vs_actual")
     assert df.actual.notna().all() and (df.in_80 == 1).all()
     c.close()
+
+
+def test_geography_shares_and_total(con):
+    df = sql_layer.query(con, """
+        SELECT g.fiscal_quarter, SUM(g.share) AS s, SUM(g.revenue) AS regions, MAX(p.total_revenue) AS total,
+               MAX(p.hedging_gains_losses) AS hedging
+        FROM revenue_geography g JOIN pnl_quarterly p USING (fiscal_quarter)
+        GROUP BY g.fiscal_quarter""")
+    assert ((df.s - 1).abs() < 1e-9).all()
+    new = df[df.fiscal_quarter >= "2019Q1"]
+    assert ((new.regions - (new.total - new.hedging)).abs() <= 1).all()   # regions exclude hedging from 2019
+    old = df[df.fiscal_quarter < "2019Q1"]
+    assert ((old.regions - old.total).abs() <= 1).all()                  # 2017-2018 regions include it

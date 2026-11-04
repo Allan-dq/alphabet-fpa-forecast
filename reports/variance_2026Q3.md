@@ -5,21 +5,21 @@ The 2026Q3 forecast uses only data through 2026Q2: revenue from the selected mod
 
 |  | forecast | actual | variance | variance_pct |
 |---|---:|---:|---:|---:|
-| Search & other | 64,491.2 | 63,350.0 | -1,141.2 | -1.8% |
-| YouTube ads | 11,349.3 | 11,207.0 | -142.3 | -1.3% |
-| Google Network | 7,374.0 | 7,455.0 | +81.0 | +1.1% |
-| Subscriptions, platforms & devices | 14,438.4 | 14,290.0 | -148.4 | -1.0% |
-| Google Cloud | 29,514.4 | 30,709.0 | +1,194.6 | +4.0% |
-| Other Bets | 382.0 | 372.0 | -10.0 | -2.6% |
+| Search & other | 67,783.1 | 63,350.0 | -4,433.1 | -6.5% |
+| YouTube ads | 11,562.5 | 11,207.0 | -355.5 | -3.1% |
+| Google Network | 7,380.3 | 7,455.0 | +74.7 | +1.0% |
+| Subscriptions, platforms & devices | 14,991.2 | 14,290.0 | -701.2 | -4.7% |
+| Google Cloud | 28,371.3 | 30,709.0 | +2,337.7 | +8.2% |
+| Other Bets | 438.2 | 372.0 | -66.2 | -15.1% |
 | Hedging gains (losses) | 0.0 | 194.0 | +194.0 | +inf% |
-| Total revenues | 127,549.3 | 127,577.0 | +27.7 | +0.0% |
-| Cost of revenues | 51,556.4 | 51,419.0 | -137.4 | -0.3% |
-| Research & development | 20,408.1 | 20,640.0 | +231.9 | +1.1% |
-| Sales & marketing | 8,395.2 | 8,804.0 | +408.8 | +4.9% |
-| General & administrative | 6,718.6 | 6,138.0 | -580.6 | -8.6% |
-| Total costs and expenses | 87,078.3 | 87,001.0 | -77.3 | -0.1% |
-| Operating income | 40,471.0 | 40,576.0 | +105.0 | +0.3% |
-| Operating margin (%) | 31.7 | 31.8 | +0.1 |  |
+| Total revenues | 130,526.5 | 127,577.0 | -2,949.5 | -2.3% |
+| Cost of revenues | 50,257.0 | 51,419.0 | +1,162.0 | +2.3% |
+| Research & development | 20,884.5 | 20,640.0 | -244.5 | -1.2% |
+| Sales & marketing | 8,591.1 | 8,804.0 | +212.9 | +2.5% |
+| General & administrative | 6,875.5 | 6,138.0 | -737.5 | -10.7% |
+| Total costs and expenses | 86,608.1 | 87,001.0 | +392.9 | +0.5% |
+| Operating income | 43,918.4 | 40,576.0 | -3,342.4 | -7.6% |
+| Operating margin (%) | 33.6 | 31.8 | -1.8 |  |
 
 ![Revenue bridge](figures/variance_revenue_waterfall.png)
 
@@ -29,15 +29,15 @@ The 2026Q3 forecast uses only data through 2026Q2: revenue from the selected mod
 
 |  | Planned % of revenue | Actual % of revenue | Difference (pp) |
 |---|---:|---:|---:|
-| Cost of revenues | 40.42% | 40.30% | -0.12 |
+| Cost of revenues | 38.50% | 40.30% | +1.80 |
 | Research & development | 16.00% | 16.18% | +0.18 |
 | Sales & marketing | 6.58% | 6.90% | +0.32 |
 | General & administrative | 5.27% | 4.81% | -0.46 |
 
 ## What drove the miss
 
-- Revenue came in +$28M (+0.0%) vs forecast.
-- Google Cloud: +$1,195M
-- Search & other: -$1,141M
-- Hedging gains (losses): +$194M
-- Operating income came in +$105M (+0.3%) vs forecast; largest drivers: General & administrative rate +$582M; Sales & marketing rate -$407M; Research & development rate -$227M.
+- Revenue came in -$2,949M (-2.3%) vs forecast.
+- Search & other: -$4,433M
+- Google Cloud: +$2,338M
+- Subscriptions, platforms & devices: -$701M
+- Operating income came in -$3,342M (-7.6%) vs forecast; largest drivers: Cost of revenues rate -$2,298M; Revenue variance (flow-through) -$992M; General & administrative rate +$582M.

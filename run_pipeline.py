@@ -13,7 +13,7 @@ import time
 
 import pandas as pd
 
-from fpa_forecast import dataset, forecasting, report, sql_layer
+from fpa_forecast import dataset, forecasting, fpa, report, sql_layer, track
 from fpa_forecast.fpa import load_assumptions
 from fpa_forecast.paths import DB_PATH, FIG_DIR, INTERIM_DIR, PROCESSED_DIR, REPORTS_DIR
 
@@ -55,7 +55,8 @@ def main() -> None:
     con = sql_layer.build(DB_PATH, forecasts=fc_table)
     sql_out = REPORTS_DIR / "sql"
     sql_out.mkdir(exist_ok=True)
-    for view in ["pnl_quarterly", "revenue_mix", "opex_ratios", "segment_margin", "ttm_metrics"]:
+    for view in ["pnl_quarterly", "revenue_mix", "opex_ratios", "segment_margin", "ttm_metrics", "revenue_geography",
+                 "fx_exposure"]:
         sql_layer.query(con, f"SELECT * FROM {view} ORDER BY ALL").to_csv(sql_out / f"{view}.csv", index=False)
     sql_layer.query(con, (REPORTS_DIR.parent / "sql" / "queries" / "backtest_accuracy.sql").read_text()).to_csv(
         sql_out / "backtest_accuracy.csv", index=False)
@@ -67,9 +68,15 @@ def main() -> None:
     sc = report.scenario_report(wide, pnl_out, assumptions)
     report.forecast_charts(wide, result)
 
+    quarters = track.quarters_before(holdout, 8)
+    e2 = fpa.cost_driver_experiment(wide, quarters)
+    tr = track.track_record(wide, result, assumptions, quarters)
+    report.experiments_report(result, e2, tr)
+    geo = report.geography_report(con, pnl_out)
+
     print("[5/5] executive summary")
-    report.exec_summary(wide, con, result, bt, pnl_out, var, sc, assumptions)
-    report.update_readme(report.readme_results(result, bt, pnl_out, var))
+    report.exec_summary(wide, con, result, bt, pnl_out, var, sc, assumptions, track=tr, geo=geo)
+    report.update_readme(report.readme_results(result, bt, pnl_out, var, track=tr, geo=geo))
     con.close()
     print(f"done in {time.time() - t0:.0f}s -> reports/")
 

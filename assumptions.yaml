@@ -8,6 +8,10 @@ holdout_quarter: "2026Q3"   # latest reported quarter; kept out of the backtest
 pnl_horizon_quarters: 4
 chart_horizon_quarters: 8
 
+# Capex for forecast quarters, used only for the depreciation memo line and E2:
+# hold_last_quarter = every forecast quarter repeats the last reported capex.
+capex_plan: hold_last_quarter
+
 revenue:
   # FX cash-flow hedging results are not planned; Alphabet does not guide them.
   hedging_gains_losses_m: 0
@@ -21,10 +25,12 @@ costs:
   #   ratio(q) = trailing-4-quarter ratio; used where the line is lumpy, not seasonal.
   cost_of_revenues:
     method: same_quarter_ly_plus_trend
-    # Judgment override: the ratio fell over the last 4 quarters, but capex rose
-    # to ~40% of revenue in 2026Q3, which lifts depreciation in cost of revenues.
-    # Plan the ratio flat year over year instead of extending the decline.
-    trend_pp: 0.0
+    # v0.1 used a judgment override here (trend 0.0, "hold flat because capex lifts depreciation").
+    # Experiment E2 (reports/experiments.md) showed that override overstated the ratio by 1.5pp on
+    # average over 2024Q4-2026Q3, and that the capex->depreciation driver fitted a wrong-signed
+    # coefficient, so the driver was not adopted. Back to the default rule used by the other lines.
+    # Depreciation is still projected from capex as a memo line and a risk (see capex_plan).
+    trend_pp: auto
   research_development:
     method: same_quarter_ly_plus_trend
     trend_pp: auto

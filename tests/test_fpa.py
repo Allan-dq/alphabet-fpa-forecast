@@ -1,7 +1,9 @@
+import numpy as np
 import pandas as pd
 import pytest
 
 from fpa_forecast import fpa
+from fpa_forecast.forecasting import config_label
 from fpa_forecast.paths import PROCESSED_DIR, REPORTS_DIR
 
 
@@ -27,8 +29,9 @@ def test_plan_ratios_same_quarter_last_year(wide, assumptions):
     resolved = fpa.resolve_costs(wide, assumptions, "2025Q4")
     r = fpa.plan_ratios(wide, resolved, "2025Q4", ["2026Q1"])
     w = wide.set_index("fiscal_quarter")
-    ly = w.loc["2025Q1", "cost_of_revenues"] / w.loc["2025Q1", "total_revenue"] * 100
-    assert r.loc["2026Q1", "cost_of_revenues"] == pytest.approx(ly + 0.0)  # explicit trend 0.0 in assumptions.yaml
+    ratio = w["cost_of_revenues"] / w["total_revenue"] * 100
+    trend = (ratio.loc["2025Q1":"2025Q4"].to_numpy() - ratio.loc["2024Q1":"2024Q4"].to_numpy()).mean()
+    assert r.loc["2026Q1", "cost_of_revenues"] == pytest.approx(ratio.loc["2025Q1"] + trend)  # `auto` trend
     ttm = w.loc["2025Q1":"2025Q4", "general_administrative"].sum() / w.loc["2025Q1":"2025Q4", "total_revenue"].sum() * 100
     assert r.loc["2026Q1", "general_administrative"] == pytest.approx(ttm)
 
@@ -73,6 +76,38 @@ def test_zero_shift_scenario_equals_base(wide, assumptions):
     assert up.google_cloud.sum() - base.google_cloud.sum() == pytest.approx(expected)
 
 
+def test_depreciation_driver_definitions(wide):
+    prm = fpa.depreciation_driver_params(wide, "2025Q4")
+    w = wide.set_index("fiscal_quarter")
+    dep, capex = w["depreciation"], w["capex"]
+    k = np.mean([(dep[q] - dep[str(pd.Period(q, freq="Q") - 1)]) / capex[str(pd.Period(q, freq="Q") - 1)]
+                 for q in ["2025Q1", "2025Q2", "2025Q3", "2025Q4"]])
+    assert prm["k"] == pytest.approx(k)
+    path = fpa.depreciation_path(prm, ["2026Q1", "2026Q2"])
+    assert path["2026Q1"] == pytest.approx(dep["2025Q4"] + k * capex["2025Q4"])
+    assert path["2026Q2"] == pytest.approx(path["2026Q1"] + k * capex["2025Q4"])  # capex held flat
+
+
+def test_cost_driver_uses_no_future_data(wide):
+    base = fpa.cost_driver_experiment(wide, ["2025Q3"])["table"].iloc[0]
+    w = wide.set_index("fiscal_quarter").copy()
+    w.loc["2025Q4":, ["depreciation", "capex", "cost_of_revenues"]] *= 3  # change only later quarters
+    other = fpa.cost_driver_experiment(w.reset_index(), ["2025Q3"])["table"].iloc[0]
+    for c in ["driver_pct", "incumbent_pct", "auto_trend_pct", "k", "s"]:
+        assert other[c] == pytest.approx(base[c])
+
+
+def test_scenario_keeps_depreciation_fixed_inside_cost_of_revenues(wide, assumptions):
+    qs = ["2026Q1"]
+    rev = fpa.revenue_plan(_fake_forecast(wide, qs), {"model": "M", "method": "BottomUp"}, qs)
+    ratios = pd.DataFrame({c: [10.0] for c in fpa.COST_LINES}, index=qs)
+    ratios["_cor_fixed_m"] = 1000.0
+    base = fpa.build_pnl(rev, ratios)
+    up = fpa.scenario_pnl(rev, ratios, wide, {"google_cloud": 10.0}, assumptions["scenarios"]["cost_behavior"])
+    var_ratio = (base.cost_of_revenues - 1000.0) / base.total_revenue
+    assert up.cost_of_revenues.iloc[0] == pytest.approx(up.total_revenue.iloc[0] * var_ratio.iloc[0] + 1000.0)
+
+
 def test_sql_and_python_backtest_metrics_agree():
     """reports/sql/backtest_accuracy.csv (DuckDB) vs reports/backtest_per_line.csv (pandas)."""
     sql_path, py_path = REPORTS_DIR / "sql" / "backtest_accuracy.csv", REPORTS_DIR / "backtest_per_line.csv"
@@ -80,7 +115,7 @@ def test_sql_and_python_backtest_metrics_agree():
         pytest.skip("run `python run_pipeline.py` first")
     s = pd.read_csv(sql_path)
     p = pd.read_csv(py_path)
-    p["model"] = p["model"] + "/" + p["method"]
+    p["model"] = config_label(p)
     m = s.merge(p, on=["model", "line"], suffixes=("_sql", "_py"))
     assert len(m) == len(p)
     for c in ["mape", "wape", "coverage_80", "coverage_95"]:

@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 
 from . import charts, fpa
-from .forecasting import ID_TO_LINE, q_to_ds  # noqa: F401
+from .forecasting import ID_TO_LINE, pick, q_to_ds  # noqa: F401
 from .paths import FIG_DIR, REPORTS_DIR
 
 DISCLAIMER = ("Independent educational project using public filings. Not investment advice. "
@@ -67,12 +67,13 @@ def backtest_report(result: dict) -> dict:
     ev["per_line"].to_csv(REPORTS_DIR / "backtest_per_line.csv", index=False)
     ev["by_horizon"].to_csv(REPORTS_DIR / "backtest_by_horizon.csv", index=False)
 
-    sel = overall[(overall.model == choice["model"]) & (overall.method == choice["method"])].iloc[0]
-    snaive = overall[(overall.model == "SeasonalNaive") & (overall.method == "base")].iloc[0]
-    drift = overall[(overall.model == "RWD") & (overall.method == "base")].iloc[0]
+    ref = {"model": "SeasonalNaive", "method": "base", "intervals": "model"}
+    sel = pick(overall, choice).iloc[0]
+    snaive = pick(overall, ref).iloc[0]
+    drift = pick(overall, {**ref, "model": "RWD"}).iloc[0]
     pl = ev["per_line"]
-    sel_lines = pl[(pl.model == choice["model"]) & (pl.method == choice["method"])].set_index("line")
-    sn_lines = pl[(pl.model == "SeasonalNaive") & (pl.method == "base")].set_index("line")
+    sel_lines = pick(pl, choice).set_index("line")
+    sn_lines = pick(pl, ref).set_index("line")
 
     order = list(SERIES_NAMES)
     per_line = pd.DataFrame({
@@ -90,9 +91,10 @@ def backtest_report(result: dict) -> dict:
 
     top = overall.copy()
     top.insert(0, "rank", range(1, len(top) + 1))
-    top = top[["rank", "model", "method", "mean_mase", "mean_wape", "total_wape", "total_mase", "coverage_80", "coverage_95"]]
+    top = top[["rank", "model", "method", "intervals", "mean_mase", "mean_wape", "total_wape", "total_mase",
+               "mean_msis", "coverage_80", "coverage_95"]]
     tfmt = {"mean_mase": "{:.3f}", "total_mase": "{:.3f}", "mean_wape": "{:.1%}", "total_wape": "{:.1%}",
-            "coverage_80": "{:.1%}", "coverage_95": "{:.1%}", "rank": "{:d}"}
+            "mean_msis": "{:.2f}", "coverage_80": "{:.1%}", "coverage_95": "{:.1%}", "rank": "{:d}"}
     cut = meta["backtest_cutoffs"]
     n_points = int(sel_lines["n"].iloc[0])
     text = f"""# Backtest results
@@ -102,12 +104,12 @@ horizons 1-4 quarters, targets up to {str(pd.Period(meta['holdout_quarter'], fre
 ({meta['holdout_quarter']}) is held out of the backtest and used only for the variance analysis. {n_points} scored
 forecasts per series. Training data start in {meta['first_quarter']}.
 
-**Selection rule (fixed before running):** {choice['rule']}.
-**Selected:** `{choice['model']}` base forecasts reconciled with `{choice['method']}`.
+**Selection rule (fixed before running, see `docs/experiments.md`):** {choice['rule']}.
+**Selected:** `{choice['model']}` base forecasts reconciled with `{choice['method']}`, `{choice['intervals']}` prediction intervals.
 
 ## Headline
 
-| | Selected ({choice['model']} + {choice['method']}) | Seasonal naive | Random walk with drift |
+| | Selected ({choice['model']} + {choice['method']}, {choice['intervals']} intervals) | Seasonal naive | Random walk with drift |
 |---|---:|---:|---:|
 | Total revenue excl. hedging: WAPE | {pct(sel.total_wape)} | {pct(snaive.total_wape)} | {pct(drift.total_wape)} |
 | Total revenue excl. hedging: MASE | {sel.total_mase:.2f} | {snaive.total_mase:.2f} | {drift.total_mase:.2f} |
@@ -122,6 +124,8 @@ forecasts per series. Training data start in {meta['first_quarter']}.
 ## All model x reconciliation combinations (sorted by mean MASE)
 
 `base` = unreconciled base forecasts, shown for reference; only coherent combinations were eligible for selection.
+`intervals`: `model` = the model's own prediction intervals, `conformal` = split-conformal intervals (point forecasts are identical).
+`mean_msis` = mean scaled interval score over the 80% and 95% levels (lower is better).
 
 {md_table(top, tfmt, index=False)}
 
@@ -138,9 +142,12 @@ def pnl_report(wide, result, assumptions) -> dict:
     qs = [str(pd.Period(last, freq="Q") + i) for i in range(1, n + 1)]
     ly_qs = [str(pd.Period(last, freq="Q") - i) for i in range(n - 1, -1, -1)]
     resolved = fpa.resolve_costs(wide, assumptions, last)
-    ratios = fpa.plan_ratios(wide, resolved, last, qs)
     rev = fpa.revenue_plan(result["live"], result["choice"], qs, assumptions["revenue"]["hedging_gains_losses_m"])
+    ratios = fpa.plan_ratios(wide, resolved, last, qs, revenue=rev[fpa.REVENUE_LINES].sum(axis=1))
     pnl = fpa.build_pnl(rev, ratios)
+    dep_prm = fpa.depreciation_driver_params(wide, last)
+    dep_path = fpa.depreciation_path(dep_prm, qs, assumptions.get("capex_plan", "hold_last_quarter"))
+    dep_ly = wide.set_index("fiscal_quarter").loc[ly_qs, "depreciation"]
     ly = fpa.actual_pnl(wide, ly_qs)
     table = fpa.pnl_table(pnl, ly)
     pnl.to_csv(REPORTS_DIR / "pnl_forecast.csv")
@@ -148,8 +155,12 @@ def pnl_report(wide, result, assumptions) -> dict:
     res_rows = pd.DataFrame([{"Cost line": fpa.LINE_NAMES[r.line], "Method": r.method,
                               "Trend (pp YoY)": np.nan if r.trend_pp is None else r.trend_pp,
                               "Source": r.trend_source} for r in resolved])
-    rat = ratios.copy()
+    rat = ratios[fpa.COST_LINES].copy()
     rat.columns = [fpa.LINE_NAMES[c] for c in rat.columns]
+    memo = pd.DataFrame({"Depreciation (capex-driven projection)": dep_path,
+                         "as % of planned revenue": dep_path / pnl["total_revenue"] * 100}).T
+    memo["Next 4Q"] = [dep_path.sum(), dep_path.sum() / pnl["total_revenue"].sum() * 100]
+    memo["Prior 4Q (actual)"] = [dep_ly.sum(), dep_ly.sum() / ly["total_revenue"].sum() * 100]
     margin_next = pnl["operating_income"].sum() / pnl["total_revenue"].sum()
     margin_prev = ly["operating_income"].sum() / ly["total_revenue"].sum()
     text = f"""# Next-{n}-quarter P&L forecast ({qs[0]} to {qs[-1]})
@@ -168,10 +179,20 @@ Operating margin: **{pct(margin_next)}** next {n} quarters vs **{pct(margin_prev
 Planned cost ratios (% of total revenue):
 
 {md_table(rat, default='{:.2f}%')}
+
+## Memo: depreciation outlook (not in the cost plan)
+
+Depreciation next quarter = this quarter's depreciation + k x this quarter's capex, with k = {dep_prm['k']:.4f}
+(mean of the last 4 quarters) and capex held at the {last} level (${dep_prm['last_capex']:,.0f}M per quarter).
+This is the capex-to-depreciation link from experiment E2. Its pass-through into the cost-of-revenues ratio
+was not adopted, because the fitted coefficient had the wrong sign (see [`experiments.md`](experiments.md)).
+
+{md_table(memo, default='{:,.1f}')}
 """
     (REPORTS_DIR / "pnl_forecast.md").write_text(text)
     return {"pnl": pnl, "ly": ly, "ratios": ratios, "rev": rev, "resolved": resolved, "quarters": qs,
-            "margin_next": margin_next, "margin_prev": margin_prev, "table": table}
+            "margin_next": margin_next, "margin_prev": margin_prev, "table": table,
+            "dep_path": dep_path, "dep_ly": dep_ly, "dep_params": dep_prm}
 
 
 # ----------------------------------------------------------------- variance
@@ -250,7 +271,7 @@ def forecast_charts(wide, result) -> None:
     w = wide.set_index("fiscal_quarter")
     ch = result["choice"]
     live = result["live"]
-    sel = live[(live.model == ch["model"]) & (live.method == ch["method"])]
+    sel = pick(live, ch)
     first = result["meta"]["first_quarter"]
 
     def fc_for(line):
@@ -258,7 +279,7 @@ def forecast_charts(wide, result) -> None:
 
     charts.forecast_chart(w.loc[first:, "total_revenue_ex_hedging"], fc_for("total_revenue_ex_hedging"),
                           "Alphabet quarterly revenue (excl. hedging): actual and 8-quarter forecast",
-                          f"{ch['model']} base forecasts, {ch['method']} reconciliation; shaded bands are 80% and 95% intervals",
+                          f"{ch['model']} base forecasts, {ch['method']} reconciliation, {ch['intervals']} intervals; shaded bands are 80% and 95%",
                           FIG_DIR / "forecast_total.png")
     keys = ["search_other", "youtube_ads", "google_network", "subscriptions_platforms_devices", "google_cloud", "other_bets_revenue"]
     charts.small_multiples({k: w.loc[first:, k] for k in keys}, {k: fc_for(k) for k in keys},
@@ -267,7 +288,7 @@ def forecast_charts(wide, result) -> None:
 
 
 # ------------------------------------------------------------ exec summary
-def exec_summary(wide, con, result, bt, pnl_out, var, sc, assumptions) -> str:
+def exec_summary(wide, con, result, bt, pnl_out, var, sc, assumptions, track=None, geo=None) -> str:
     from . import sql_layer
 
     w = wide.set_index("fiscal_quarter")
@@ -290,11 +311,14 @@ def exec_summary(wide, con, result, bt, pnl_out, var, sc, assumptions) -> str:
     cloud_cov80 = sel_lines.loc["google_cloud", "coverage_80"]
     live = result["live"]
     ch = result["choice"]
-    cloud_end = live[(live.model == ch["model"]) & (live.method == ch["method"]) & (live.line == "google_cloud")
-                     & (live.fiscal_quarter == qs[-1])].iloc[0]
+    sel_live = pick(live, ch)
+    cloud_end = sel_live[(sel_live.line == "google_cloud") & (sel_live.fiscal_quarter == qs[-1])].iloc[0]
     sens = sc["sensitivity"]
     cases = sc["cases"]
     one_pp_cor = rev_next * 0.01
+    dep_next_pct = pnl_out["dep_path"].sum() / rev_next
+    dep_prev_pct = pnl_out["dep_ly"].sum() / rev_prev
+    dep_hit = (dep_next_pct - dep_prev_pct) * rev_next
     rv = var["table"]
 
     headline = (f"For the next four quarters ({qs[0]}-{qs[-1]}) we forecast revenue of **{bn(rev_next)}**, "
@@ -305,6 +329,12 @@ def exec_summary(wide, con, result, bt, pnl_out, var, sc, assumptions) -> str:
                 f"On the held-out quarter ({var['quarter']}) actual revenue differed from forecast by "
                 f"{sm(rv.loc['total_revenue','variance'])} ({rv.loc['total_revenue','variance_pct']:+.1f}%) and operating income by "
                 f"{sm(rv.loc['operating_income','variance'])} ({rv.loc['operating_income','variance_pct']:+.1f}%).")
+    if track is not None:
+        ts = track["summary"].set_index("config")
+        prod, rt = ts.loc["production"], ts.loc["real-time selection"]
+        headline += (f" Over the last 8 quarters, one-quarter-ahead revenue forecasts missed by {prod.mean_abs_revenue_var_pct:.1f}% on "
+                     f"average ({rt.mean_abs_revenue_var_pct:.1f}% with fully real-time model selection; seasonal naive "
+                     f"{ts.loc['seasonal naive'].mean_abs_revenue_var_pct:.1f}%).")
 
     names = fpa.LINE_NAMES
     drivers = []
@@ -321,9 +351,12 @@ def exec_summary(wide, con, result, bt, pnl_out, var, sc, assumptions) -> str:
         f"**Cloud is the swing factor and the least predictable line.** In the backtest only {pct(cloud_cov80, 0)} of Cloud "
         f"outcomes fell inside the 80% interval (growth kept accelerating). The {qs[-1]} Cloud forecast is {bn(cloud_end.forecast)} "
         f"with a 95% interval of {bn(cloud_end.lo_95)}-{bn(cloud_end.hi_95)}.",
-        f"**Depreciation pressure on cost of revenues.** Trailing-12-month capex reached {pct(ttm.iloc[-1].capex_intensity_ttm)} of revenue "
-        f"in {last} vs {pct(ttm.iloc[0].capex_intensity_ttm)} a year earlier. The plan holds the cost-of-revenues ratio flat year over year; "
-        f"each +1pp would cut operating income by about {bn(one_pp_cor)} over four quarters.",
+        f"**Depreciation vs the cost plan.** Trailing-12-month capex reached {pct(ttm.iloc[-1].capex_intensity_ttm)} of revenue "
+        f"in {last} (a year earlier: {pct(ttm.iloc[0].capex_intensity_ttm)}). With capex held at that level, depreciation rises to "
+        f"{pct(dep_next_pct)} of revenue over the next four quarters from {pct(dep_prev_pct)}, while the cost plan extends the recent "
+        f"{dr['cost_of_revenues']:+.1f}pp trend in the cost-of-revenues ratio. If the {(dep_next_pct - dep_prev_pct) * 100:+.1f}pp rise in "
+        f"depreciation landed fully in cost of revenues, operating income would be about {bn(dep_hit)} lower (margin "
+        f"{pct((oi_next - dep_hit) / rev_next)}).",
         f"**Search growth.** Search & other is {pct(mix.loc['search_other','share_of_total'])} of {last} revenue and came in "
         f"{rv.loc['search_other','variance_pct']:+.1f}% vs forecast in {var['quarter']}. The downside case (Search -2pp, Cloud -5pp) "
         f"lowers four-quarter revenue by {bn(cases.loc['base','revenue'] - cases.loc['downside','revenue'])} and margin to "
@@ -333,6 +366,8 @@ def exec_summary(wide, con, result, bt, pnl_out, var, sc, assumptions) -> str:
         f"Google Cloud QoQ growth ({pct(mix.loc['google_cloud','qoq_growth'])} in {last}) and segment margin ({pct(seg.loc['Google Cloud','operating_margin'])}).",
         f"Search & other YoY growth ({pct(mix.loc['search_other','yoy_growth'])} in {last}).",
         f"Capex intensity, TTM ({pct(ttm.iloc[-1].capex_intensity_ttm)}) and cost of revenues as % of revenue.",
+    ] + ([f"FX: non-US customers are {pct(geo['non_us_share_ttm'])} of revenue (TTM); a 5% stronger USD would lower "
+          f"four-quarter revenue by about {bn(geo['fx5'])} before hedging."] if geo is not None else []) + [
         f"Operating-margin range across the Cloud +/-5pp and Search +/-2pp grid: {sens.values.min():.1f}%-{sens.values.max():.1f}%.",
     ]
     sections = {"headline": headline, "drivers": drivers, "risks": risks, "watch": watch}
@@ -354,7 +389,7 @@ def exec_summary(wide, con, result, bt, pnl_out, var, sc, assumptions) -> str:
 **Metrics to watch**
 """ + "\n".join(f"- {d}" for d in watch) + """
 
-Details: [P&L](pnl_forecast.md) · [backtest](backtest_summary.md) · [variance](variance_""" + var["quarter"] + """.md) · [scenarios](scenarios.md) · [method](../docs/methodology.md)
+Details: [P&L](pnl_forecast.md) · [backtest](backtest_summary.md) · [variance](variance_""" + var["quarter"] + """.md) · [track record and experiments](experiments.md) · [scenarios](scenarios.md) · [geography/FX](geography_fx.md) · [method](../docs/methodology.md)
 """
     (REPORTS_DIR / "exec_summary.md").write_text(md)
     (REPORTS_DIR / "exec_summary.json").write_text(json.dumps(sections, indent=2))
@@ -408,7 +443,7 @@ def exec_pdf(sections: dict, qs: list[str], last: str, filed: str) -> None:
 README_START, README_END = "<!-- RESULTS:START (generated by run_pipeline.py) -->", "<!-- RESULTS:END -->"
 
 
-def readme_results(result, bt, pnl_out, var) -> str:
+def readme_results(result, bt, pnl_out, var, track=None, geo=None) -> str:
     sel, sn, dr = bt["selected"], bt["snaive"], bt["drift"]
     ch, meta = result["choice"], result["meta"]
     per = bt["per_line"]
@@ -419,7 +454,7 @@ def readme_results(result, bt, pnl_out, var) -> str:
     t = var["table"]
     tfm_line = ""
     tfm_path = REPORTS_DIR / "timesfm_challenger.csv"
-    if tfm_path.exists():
+    if tfm_path.exists() and ((pd.read_csv(tfm_path)[["model", "method"]] == [ch["model"], ch["method"]]).all(axis=1).any()):
         tf = pd.read_csv(tfm_path)
         g = tf.groupby(["model", "method"])["mase"].mean()
         tot = tf[tf.line == "total_revenue_ex_hedging"].set_index(["model", "method"])["wape"]
@@ -428,10 +463,28 @@ def readme_results(result, bt, pnl_out, var) -> str:
                     f"{g.loc[('TimesFM-2.5', best_tfm)]:.2f}, total WAPE {tot.loc[('TimesFM-2.5', best_tfm)]:.1%}, vs "
                     f"{g.loc[(ch['model'], ch['method'])]:.2f} / {tot.loc[(ch['model'], ch['method'])]:.1%} for the selected model. "
                     f"[Details](reports/timesfm_challenger.md).\n")
+    track_md = ""
+    if track is not None:
+        ts = track["summary"].set_index("config")
+        rows = "\n".join(f"| {c} | {r.mean_abs_revenue_var_pct:.2f}% | {r.revenue_bias_pct:+.2f}% | {int(r.quarters_within_1pct)} of 8 | "
+                         f"{r.mean_abs_oi_var_pct:.2f}% |" for c, r in ts.iterrows())
+        track_md = f"""
+### Track record: last 8 quarters, one quarter ahead
+
+Each quarter was forecast with data through the previous quarter only, then compared with what Alphabet reported.
+
+| Configuration | Mean abs. revenue variance | Bias (+ = actual above forecast) | Within ±1% | Mean abs. operating-income variance |
+|---|---:|---:|---:|---:|
+{rows}
+
+![Track record](reports/figures/track_record.png)
+
+How the configuration and cost plan were changed after v0.1, under rules committed before the tests ran: [`reports/experiments.md`](reports/experiments.md).
+"""
     return f"""{README_START}
 ### Backtest ({len(meta['backtest_cutoffs'])} rolling origins, {meta['backtest_cutoffs'][0]}-{meta['backtest_cutoffs'][-1]}, horizons 1-4 quarters)
 
-Selected by a rule fixed in advance (lowest mean MASE across the 8 hierarchy series): **{ch['model']} + {ch['method']}**.
+Selected by rules fixed in advance ([`docs/experiments.md`](docs/experiments.md)): **{ch['model']} + {ch['method']}**, {ch['intervals']} prediction intervals.
 
 | | Selected | Seasonal naive | Drift |
 |---|---:|---:|---:|
@@ -463,9 +516,10 @@ Revenue {sm(t.loc['total_revenue', 'variance'])} ({t.loc['total_revenue', 'varia
 
 ![Operating income variance bridge](reports/figures/variance_oi_waterfall.png)
 
+{track_md}
 ### Executive summary
 
-One page for leadership: [`reports/exec_summary.md`](reports/exec_summary.md) · [PDF](reports/exec_summary.pdf). Scenarios and margin sensitivity: [`reports/scenarios.md`](reports/scenarios.md).
+One page for leadership: [`reports/exec_summary.md`](reports/exec_summary.md) · [PDF](reports/exec_summary.pdf). Scenarios and margin sensitivity: [`reports/scenarios.md`](reports/scenarios.md). Geography and FX: [`reports/geography_fx.md`](reports/geography_fx.md).
 {README_END}"""
 
 
@@ -479,3 +533,172 @@ def update_readme(block: str) -> None:
     head, rest = text.split(README_START, 1)
     tail = rest.split(README_END, 1)[1]
     path.write_text(head + block + tail)
+
+
+# -------------------------------------------------------------- experiments
+def experiments_report(result: dict, e2: dict, track: dict) -> str:
+    ch, log = result["choice"], result["choice"]["decision_log"]
+    ov = result["eval"]["overall"]
+    coh = ov[ov["method"].isin(["BottomUp", "TopDown", "MinT"])]
+    pts = coh[coh["intervals"] == "model"].head(10)[["model", "method", "mean_mase", "total_wape", "mean_msis",
+                                                     "coverage_80", "coverage_95"]]
+    kept = ov[(ov["model"] == ch["model"]) & (ov["method"] == ch["method"])][
+        ["intervals", "mean_msis", "coverage_80", "coverage_95"]]
+    inc = ov[(ov["model"] == log["incumbent_model"]) & (ov["method"] == log["incumbent_method"])][
+        ["intervals", "mean_msis", "coverage_80", "coverage_95"]]
+    improve = 1 - log["best_mean_mase"] / log["incumbent_mean_mase"]
+    replaced = (ch["model"], ch["method"]) != (log["incumbent_model"], log["incumbent_method"])
+    f3 = {"mean_mase": "{:.3f}", "total_wape": "{:.1%}", "mean_msis": "{:.2f}", "coverage_80": "{:.1%}",
+          "coverage_95": "{:.1%}"}
+
+    t2 = e2["table"].copy()
+    t2.to_csv(REPORTS_DIR / "experiment_e2_cost_of_revenues.csv", index=False)
+    t2v = t2[["quarter", "actual_pct", "incumbent_pct", "driver_pct", "auto_trend_pct", "s", "k"]].set_index("quarter")
+    mae, bias = e2["mae_pp"], e2["bias_pp"]
+
+    tr = track["table"]
+    tr.to_csv(REPORTS_DIR / "track_record.csv", index=False)
+    summ = track["summary"].set_index("config")
+    prod = tr[tr["config"] == "production"].set_index("quarter")[
+        ["model", "revenue_forecast", "revenue_actual", "revenue_variance", "revenue_variance_pct", "oi_variance_pct",
+         "var_Search & other", "var_Google Cloud", "var_All other lines"]]
+    picks = track["realtime_picks"].set_index("quarter")
+    signs = track["line_signs"]
+    charts.track_record_chart(tr[tr["config"] == "production"].reset_index(drop=True), list(signs),
+                              FIG_DIR / "track_record.png",
+                              "Revenue forecast vs actual, one quarter ahead, last 8 quarters",
+                              f"Actual minus forecast by line group ({ch['model']} + {ch['method']}); dot = total, label = total % variance")
+
+    text = f"""# Experiment results
+
+Pre-registered rules: [`docs/experiments.md`](../docs/experiments.md), committed before any of these results existed.
+
+## E1. Point model and intervals
+
+**Point forecast.** The incumbent ({log['incumbent_model']} + {log['incumbent_method']}) has mean MASE {log['incumbent_mean_mase']:.3f}.
+The best coherent challenger ({log['best_model']} + {log['best_method']}) has {log['best_mean_mase']:.3f}, which is
+{improve:.1%} lower (the threshold is {log['materiality']:.0%}). **Decision: {'replace the incumbent' if replaced else 'keep the incumbent'}
+→ {ch['model']} + {ch['method']}.**
+
+**Intervals.** For {ch['model']} + {ch['method']}, mean MSIS is {log['msis_model']:.2f} with model intervals and
+{log['msis_conformal']:.2f} with conformal intervals. **Decision: {ch['intervals']} intervals.**
+
+Top 10 coherent configurations by mean MASE (model intervals):
+
+{md_table(pts, f3, index=False)}
+
+Interval kinds for the selected configuration:
+
+{md_table(kept, f3, index=False)}
+
+Same comparison for the previous production configuration:
+
+{md_table(inc, f3, index=False)}
+
+Reading the result:
+- **Better calibrated, but now conservative.** Log-scale modeling widened the intervals where growth compounds, so coverage rose toward or above nominal. Several stable lines now reach 100% coverage, meaning their intervals are wider than needed. Cloud is still under-covered, though much less than before.
+- **Conformal lost.** With 2 calibration windows, split-conformal intervals rest on very few errors per horizon, so they came out too narrow.
+
+## E2. Cost of revenues: capex → depreciation driver
+
+One-quarter-ahead cost-of-revenues ratio (% of revenue), actual revenue as the denominator:
+
+{md_table(t2v, {'s': '{:+.2f}', 'k': '{:.4f}'}, default='{:.2f}')}
+
+| Method | Mean absolute error (pp) | Mean error (pp, + = overstated) |
+|---|---:|---:|
+| Incumbent: same quarter last year + 0.0pp | {mae['incumbent']:.2f} | {bias['incumbent']:+.2f} |
+| Challenger: depreciation driver | {mae['driver']:.2f} | {bias['driver']:+.2f} |
+| Reference: same quarter last year + `auto` trend | {mae['auto_trend']:.2f} | {bias['auto_trend']:+.2f} |
+
+**Pre-registered rule:** adopt the driver if its mean absolute error is lower. That condition is
+**{'met' if e2['driver_wins'] else 'not met'}**.
+
+**Deviation from the rule: the driver was not adopted.**
+- The pass-through coefficient s is negative once it can be estimated (from 2025Q1): {t2['s'].iloc[1:].min():+.2f} to {t2['s'].iloc[1:].max():+.2f}. Read literally, a rising depreciation share would *lower* the cost-of-revenues ratio, which is not economically plausible.
+- What the regression actually captures is the downward trend in the ratio, which happened while depreciation intensity rose. So the "driver" is a disguised trend model, not a depreciation model.
+- Shipping it would put a wrong-signed relationship into the plan.
+
+**What changed instead:**
+- The experiment also showed that the v0.1 judgment override (hold the ratio flat) overstated cost of revenues by {bias['incumbent']:+.2f}pp on average.
+- `assumptions.yaml` now uses the default rule for cost of revenues (same quarter last year + `auto` trend), the same rule R&D and S&M already use. In this comparison it also had the lowest error ({mae['auto_trend']:.2f}pp). That is disclosed here because it was seen before the switch.
+- The capex → depreciation link is sensible (k > 0) and is kept as a memo projection in [`pnl_forecast.md`](pnl_forecast.md) and as a risk in the executive summary.
+
+## E3. Forecast track record (last 8 quarters, one quarter ahead)
+
+![Track record](figures/track_record.png)
+
+| Configuration | Mean abs. revenue variance | Revenue bias (+ = beat) | Worst quarter | Quarters within ±1% | Mean abs. operating-income variance | OI bias |
+|---|---:|---:|---:|---:|---:|---:|
+""" + "\n".join(
+        f"| {c} | {r.mean_abs_revenue_var_pct:.2f}% | {r.revenue_bias_pct:+.2f}% | {r.max_abs_revenue_var_pct:.2f}% | "
+        f"{int(r.quarters_within_1pct)} of 8 | {r.mean_abs_oi_var_pct:.2f}% | {r.oi_bias_pct:+.2f}% |"
+        for c, r in summ.iterrows()) + f"""
+
+Production configuration by quarter (USD millions; variance = actual − forecast):
+
+{md_table(prod, {'revenue_variance_pct': '{:+.2f}%', 'oi_variance_pct': '{:+.2f}%', 'revenue_variance': '{:+,.0f}',
+                 'var_Search & other': '{:+,.0f}', 'var_Google Cloud': '{:+,.0f}', 'var_All other lines': '{:+,.0f}'},
+          default='{:,.0f}')}
+
+Direction of misses (production): """ + "; ".join(
+        f"{g}: actual above forecast in {v['beat']} of 8 quarters, below in {v['miss']}" for g, v in signs.items()) + f""".
+
+Real-time selection picked, quarter by quarter (only backtest targets before that quarter):
+{", ".join(f"{q}: {r.model} + {r.method}" for q, r in picks.iterrows())}.
+
+Caveats:
+- The production configuration was selected with backtest targets through {str(pd.Period(result['meta']['holdout_quarter'], freq='Q') - 1)}, so its track record is not fully out of sample.
+- Real-time selection is out of sample at every quarter.
+- Operating-income variance also reflects the cost assumptions as they would have been resolved at each quarter.
+"""
+    (REPORTS_DIR / "experiments.md").write_text(text)
+    return text
+
+
+# ---------------------------------------------------------------- geography
+def geography_report(con, pnl_out: dict) -> dict:
+    from . import sql_layer
+
+    geo = sql_layer.query(con, "SELECT * FROM revenue_geography ORDER BY ALL")
+    fx = sql_layer.query(con, "SELECT * FROM fx_exposure ORDER BY ALL")
+    last = geo["fiscal_quarter"].max()
+    recent = sorted(geo["fiscal_quarter"].unique())[-8:]
+    piv = geo[geo["fiscal_quarter"].isin(recent)].pivot(index="fiscal_quarter", columns="region", values="yoy_growth")
+    share = geo[geo["fiscal_quarter"] == last].set_index("region")[["revenue", "share", "yoy_growth"]]
+    fx_ttm = fx.tail(4)
+    non_us_share_ttm = fx_ttm["non_us_revenue"].sum() / (fx_ttm["non_us_revenue"] / fx_ttm["non_us_share"]).sum()
+    first = fx.iloc[0]
+    next_rev = (pnl_out["pnl"]["total_revenue"] - pnl_out["pnl"]["hedging_gains_losses"]).sum()
+    fx5 = next_rev * non_us_share_ttm * 0.05
+    hedge = fx.tail(8)
+    ser = {r: geo[(geo["region"] == r) & (geo["fiscal_quarter"] >= "2020Q1")].set_index("fiscal_quarter")["yoy_growth"]
+           for r in ["United States", "EMEA", "APAC", "Other Americas"]}
+    charts.multi_line_chart(ser, FIG_DIR / "geography_yoy.png", "Revenue growth by region, year over year",
+                            "Quarterly revenue excl. hedging by customer location; 2020Q1 onward")
+    sfmt = {"revenue": "{:,.0f}", "share": "{:.1%}", "yoy_growth": "{:+.1%}"}
+    text = f"""# Geography and FX
+
+Revenue by customer location (`sql/07_revenue_geography.sql`) and an FX lens (`sql/08_fx_exposure.sql`).
+From 2019 the regions sum to revenue excluding hedging gains (losses). The 2017–2018 regional figures
+include hedging, so comparisons across 2019 have a small break.
+
+## {last}
+
+{md_table(share, sfmt)}
+
+## YoY growth by region, last 8 quarters
+
+{md_table(piv, default='{:+.1%}')}
+
+![Regional growth](figures/geography_yoy.png)
+
+## FX exposure
+
+- **Non-US share:** {pct(non_us_share_ttm)} of revenue excluding hedging over the last 4 quarters, vs {pct(first.non_us_share)} in {first.fiscal_quarter}.
+- **Hedging results:** gains (losses) ranged from {sm(hedge['hedging_gains_losses'].min())} to {sm(hedge['hedging_gains_losses'].max())} per quarter over the last 8 quarters, i.e. {hedge['hedging_pct_of_non_us'].min():+.2%} to {hedge['hedging_pct_of_non_us'].max():+.2%} of non-US revenue.
+- **Translation sensitivity (mechanical):** if the US dollar were 5% stronger against every currency for the next 4 quarters, non-US revenue would translate about **{bn(fx5)} lower** (next-4-quarter revenue excl. hedging × trailing non-US share × 5%), before hedging gains. Recent hedging results are small next to that, so most of a broad USD move would reach reported revenue.
+- **Not available:** Alphabet's constant-currency growth figures are in the MD&A text and are not XBRL-tagged, so they are not used here.
+"""
+    (REPORTS_DIR / "geography_fx.md").write_text(text)
+    return {"non_us_share_ttm": non_us_share_ttm, "fx5": fx5, "last": last, "share": share}

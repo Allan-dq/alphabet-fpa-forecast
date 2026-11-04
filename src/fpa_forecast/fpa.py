@@ -5,14 +5,14 @@ All amounts are USD millions. Revenue comes from the selected forecast
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import yaml
 
-from .forecasting import BOTTOM_LINES
+from .forecasting import BOTTOM_LINES, pick
 from .paths import REPO_ROOT
 
 COST_LINES = ["cost_of_revenues", "research_development", "sales_marketing", "general_administrative"]
@@ -54,6 +54,37 @@ class ResolvedCost:
     method: str
     trend_pp: float | None
     trend_source: str
+    params: dict = field(default_factory=dict)
+
+
+def depreciation_driver_params(wide: pd.DataFrame, as_of: str) -> dict:
+    """Capex -> depreciation -> cost of revenues driver, estimated with data through `as_of` (E2).
+
+    k: next quarter's depreciation = this quarter's depreciation + k x this quarter's capex;
+       k = mean of (change in depreciation / prior-quarter capex) over the last 4 quarters.
+    s: share of a change in depreciation intensity (depreciation / revenue) that shows up in the
+       cost-of-revenues ratio; OLS slope through the origin of YoY change in cost-of-revenues % on
+       YoY change in depreciation %, all pairs available at `as_of`; s = 1 if fewer than 4 pairs.
+    """
+    w = _w(wide).loc[:as_of]
+    dep, capex, rev = w["depreciation"], w["capex"], w["total_revenue"]
+    k_obs = (dep.diff() / capex.shift(1)).dropna().iloc[-4:]
+    cor_pct = w["cost_of_revenues"] / rev * 100
+    dep_pct = dep / rev * 100
+    pairs = pd.concat([dep_pct - dep_pct.shift(4), cor_pct - cor_pct.shift(4)], axis=1, keys=["x", "y"]).dropna()
+    s = float((pairs.x * pairs.y).sum() / (pairs.x ** 2).sum()) if len(pairs) >= 4 else 1.0
+    return {"k": float(k_obs.mean()), "s": s, "n_pairs": int(len(pairs)), "n_k": int(len(k_obs)),
+            "last_depreciation": float(dep.loc[as_of]), "last_capex": float(capex.loc[as_of])}
+
+
+def depreciation_path(params: dict, quarters: list[str], capex_plan: str = "hold_last_quarter") -> pd.Series:
+    if capex_plan != "hold_last_quarter":
+        raise ValueError(f"unknown capex_plan {capex_plan!r}")
+    d, cap, out = params["last_depreciation"], params["last_capex"], {}
+    for q in quarters:
+        d = d + params["k"] * cap  # capex is held at the last reported quarter
+        out[q] = d
+    return pd.Series(out)
 
 
 def resolve_costs(wide: pd.DataFrame, assumptions: dict, as_of: str) -> list[ResolvedCost]:
@@ -66,6 +97,12 @@ def resolve_costs(wide: pd.DataFrame, assumptions: dict, as_of: str) -> list[Res
         if spec["method"] == "ttm_ratio":
             out.append(ResolvedCost(line, "ttm_ratio", None, "n/a"))
             continue
+        if spec["method"] == "depreciation_driver":
+            prm = depreciation_driver_params(wide, as_of)
+            prm["capex_plan"] = assumptions.get("capex_plan", "hold_last_quarter")
+            out.append(ResolvedCost(line, "depreciation_driver", None,
+                                    f"driver: k={prm['k']:.4f}, s={prm['s']:.2f} ({prm['n_pairs']} pairs)", prm))
+            continue
         t = spec.get("trend_pp", "auto")
         if t == "auto":
             yoy = (ratio[line] - ratio[line].shift(4)).iloc[-4:]
@@ -75,10 +112,17 @@ def resolve_costs(wide: pd.DataFrame, assumptions: dict, as_of: str) -> list[Res
     return out
 
 
-def plan_ratios(wide: pd.DataFrame, resolved: list[ResolvedCost], as_of: str, quarters: list[str]) -> pd.DataFrame:
-    """Planned cost ratio (% of total revenue) per future quarter and cost line."""
+def plan_ratios(wide: pd.DataFrame, resolved: list[ResolvedCost], as_of: str, quarters: list[str],
+                revenue: pd.Series | None = None) -> pd.DataFrame:
+    """Planned cost ratio (% of total revenue) per future quarter and cost line.
+
+    `revenue` (planned total revenue by quarter) is needed by the depreciation driver. When that
+    driver is used, column `_cor_fixed_m` holds the depreciation dollars inside cost of revenues,
+    which do not flex with revenue in scenarios.
+    """
     w = _w(wide).loc[:as_of]
     ratio = w[COST_LINES].div(w["total_revenue"], axis=0) * 100
+    dep_pct = (w["depreciation"] / w["total_revenue"] * 100) if "depreciation" in w else None
     ttm = (w[COST_LINES].iloc[-4:].sum() / w["total_revenue"].iloc[-4:].sum()) * 100
     rows = {}
     for q in quarters:
@@ -86,6 +130,15 @@ def plan_ratios(wide: pd.DataFrame, resolved: list[ResolvedCost], as_of: str, qu
         for rc in resolved:
             if rc.method == "ttm_ratio":
                 r[rc.line] = ttm[rc.line]
+            elif rc.method == "depreciation_driver":
+                if revenue is None:
+                    raise ValueError("the depreciation driver needs planned revenue")
+                ly = _q(q, -4)
+                if ly not in ratio.index:
+                    raise ValueError(f"depreciation driver needs actuals for {ly}")
+                dep_q = depreciation_path(rc.params, quarters, rc.params.get("capex_plan", "hold_last_quarter"))[q]
+                r[rc.line] = ratio.loc[ly, rc.line] + rc.params["s"] * (dep_q / revenue[q] * 100 - dep_pct.loc[ly])
+                r["_cor_fixed_m"] = rc.params["s"] * dep_q
             else:
                 # same quarter last year; if that is itself a forecast quarter, step back again
                 ly = _q(q, -4)
@@ -95,13 +148,40 @@ def plan_ratios(wide: pd.DataFrame, resolved: list[ResolvedCost], as_of: str, qu
                     k += 1
                 r[rc.line] = ratio.loc[ly, rc.line] + rc.trend_pp * k
         rows[q] = r
-    return pd.DataFrame(rows).T[COST_LINES]
+    out = pd.DataFrame(rows).T
+    return out[COST_LINES + [c for c in out.columns if c.startswith("_")]]
+
+
+def cost_driver_experiment(wide: pd.DataFrame, quarters: list[str]) -> dict:
+    """E2 (docs/experiments.md): one-quarter-ahead cost-of-revenues ratio, incumbent vs driver.
+
+    Actual revenue is the denominator, so revenue forecast error does not enter the comparison.
+    """
+    w = _w(wide)
+    rows = []
+    for q in quarters:
+        as_of, ly = _q(q, -1), _q(q, -4)
+        rev = w.loc[q, "total_revenue"]
+        actual = w.loc[q, "cost_of_revenues"] / rev * 100
+        ly_ratio = w.loc[ly, "cost_of_revenues"] / w.loc[ly, "total_revenue"] * 100
+        hist = (w.loc[:as_of, "cost_of_revenues"] / w.loc[:as_of, "total_revenue"] * 100)
+        auto = ly_ratio + (hist - hist.shift(4)).iloc[-4:].mean()
+        prm = depreciation_driver_params(wide, as_of)
+        dep_hat = prm["last_depreciation"] + prm["k"] * prm["last_capex"]
+        driver = ly_ratio + prm["s"] * (dep_hat / rev * 100 - w.loc[ly, "depreciation"] / w.loc[ly, "total_revenue"] * 100)
+        rows.append(dict(quarter=q, actual_pct=actual, incumbent_pct=ly_ratio, driver_pct=driver, auto_trend_pct=auto,
+                         depreciation_forecast_m=dep_hat, depreciation_actual_m=w.loc[q, "depreciation"],
+                         k=prm["k"], s=prm["s"], n_pairs=prm["n_pairs"]))
+    df = pd.DataFrame(rows)
+    mae = {c: float((df[f"{c}_pct"] - df["actual_pct"]).abs().mean()) for c in ["incumbent", "driver", "auto_trend"]}
+    bias = {c: float((df[f"{c}_pct"] - df["actual_pct"]).mean()) for c in ["incumbent", "driver", "auto_trend"]}
+    return {"table": df, "mae_pp": mae, "bias_pp": bias, "driver_wins": mae["driver"] < mae["incumbent"]}
 
 
 # ---------------------------------------------------------------------- P&L
 def revenue_plan(fc_long: pd.DataFrame, choice: dict, quarters: list[str], hedging: float = 0.0) -> pd.DataFrame:
-    sel = fc_long[(fc_long["model"] == choice["model"]) & (fc_long["method"] == choice["method"])
-                  & fc_long["line"].isin(BOTTOM_LINES) & fc_long["fiscal_quarter"].isin(quarters)]
+    sel = pick(fc_long, choice)
+    sel = sel[sel["line"].isin(BOTTOM_LINES) & sel["fiscal_quarter"].isin(quarters)]
     rev = sel.pivot(index="fiscal_quarter", columns="line", values="forecast").reindex(quarters)[BOTTOM_LINES]
     rev["hedging_gains_losses"] = hedging
     return rev
@@ -145,8 +225,9 @@ def variance(wide: pd.DataFrame, fc_holdout: pd.DataFrame, choice: dict, assumpt
     """Forecast (made with data through the prior quarter) vs actual for one quarter."""
     as_of = _q(quarter, -1)
     resolved = resolve_costs(wide, assumptions, as_of)
-    ratios = plan_ratios(wide, resolved, as_of, [quarter])
-    fc = build_pnl(revenue_plan(fc_holdout, choice, [quarter], assumptions["revenue"]["hedging_gains_losses_m"]), ratios)
+    rev = revenue_plan(fc_holdout, choice, [quarter], assumptions["revenue"]["hedging_gains_losses_m"])
+    ratios = plan_ratios(wide, resolved, as_of, [quarter], revenue=rev[REVENUE_LINES].sum(axis=1))
+    fc = build_pnl(rev, ratios)
     act = actual_pnl(wide, [quarter])
     f, a = fc.loc[quarter], act.loc[quarter]
 
@@ -210,6 +291,11 @@ def scenario_pnl(base_rev: pd.DataFrame, ratios: pd.DataFrame, wide: pd.DataFram
         ly = pd.Series({q: w.loc[_q(q, -4), line] for q in rev.index})
         rev[line] = rev[line] + ly * pp / 100
     p = build_pnl(rev, ratios)
+    if "_cor_fixed_m" in ratios.columns and cost_behavior.get("cost_of_revenues") == "variable":
+        # depreciation follows capex, not revenue: only the rest of cost of revenues flexes
+        fixed = ratios.loc[p.index, "_cor_fixed_m"]
+        var_ratio = (base["cost_of_revenues"] - fixed) / base["total_revenue"]
+        p["cost_of_revenues"] = p["total_revenue"] * var_ratio + fixed
     for c in COST_LINES:
         if cost_behavior.get(c) == "fixed":
             p[c] = base[c]

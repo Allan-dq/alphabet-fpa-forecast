@@ -173,3 +173,77 @@ def waterfall(steps: pd.DataFrame, title: str, subtitle: str, path, favorable_up
     fig.tight_layout(rect=(0, 0, 1, 0.87))
     fig.savefig(path, dpi=160)
     plt.close(fig)
+
+
+# Categorical slots 1-3 (validated adjacent and all-pairs in the reference palette), slot 4 for a 4th line.
+CAT = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100"]
+
+
+def track_record_chart(df: pd.DataFrame, groups: list[str], path, title: str, subtitle: str):
+    """Stacked diverging columns: revenue variance (actual - forecast) by quarter, split by line group."""
+    fig, ax = plt.subplots(figsize=(10, 4.8))
+    x = list(range(len(df)))
+    pos = [0.0] * len(df)
+    neg = [0.0] * len(df)
+    for color, g in zip(CAT, groups):
+        vals = df[f"var_{g}"].tolist()
+        bottoms = [p if v >= 0 else n for v, p, n in zip(vals, pos, neg)]
+        ax.bar(x, vals, bottom=bottoms, width=0.55, color=color, edgecolor=SURFACE, linewidth=2, label=g)
+        pos = [p + max(v, 0) for p, v in zip(pos, vals)]
+        neg = [n + min(v, 0) for n, v in zip(neg, vals)]
+    total = df["revenue_variance"].tolist()
+    ax.plot(x, total, "o", color=INK, markersize=7, markeredgecolor=SURFACE, markeredgewidth=2, label="Total variance",
+            zorder=5)
+    for i, (t, pct) in enumerate(zip(total, df["revenue_variance_pct"])):
+        top = pos[i] if t >= 0 else neg[i]
+        ax.annotate(f"{pct:+.1f}%", (i, top), xytext=(0, 6 if t >= 0 else -14), textcoords="offset points",
+                    ha="center", fontsize=8.5, color=INK_2)
+    ax.axhline(0, color=AXIS, linewidth=1)
+    ax.set_xticks(x)
+    ax.set_xticklabels(df["quarter"], color=INK_2)
+    ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda v, _: _money(v)))
+    _grid(ax)
+    _titles(fig, title, subtitle)
+    leg = ax.legend(frameon=False, fontsize=9, ncol=4, loc="upper left")
+    for t in leg.get_texts():
+        t.set_color(INK_2)
+    ymin, ymax = ax.get_ylim()
+    ax.set_ylim(ymin - (ymax - ymin) * 0.08, ymax + (ymax - ymin) * 0.18)
+    fig.tight_layout(rect=(0, 0, 1, 0.87))
+    fig.savefig(path, dpi=160)
+    plt.close(fig)
+
+
+def multi_line_chart(series: dict[str, pd.Series], path, title: str, subtitle: str, pct: bool = True):
+    """One line per series (max 4, fixed categorical order), legend plus end labels."""
+    fig, ax = plt.subplots(figsize=(9, 4.6))
+    ends = []
+    for color, (name, s) in zip(CAT, series.items()):
+        s = s.dropna()
+        xs = [q_to_ds(q) for q in s.index]
+        ax.plot(xs, s.values, color=color, linewidth=2, solid_capstyle="round", label=name)
+        ax.plot([xs[-1]], [s.values[-1]], "o", color=color, markersize=6, markeredgecolor=SURFACE, markeredgewidth=2)
+        ends.append([s.values[-1], xs[-1], f"{name} {s.values[-1]:+.0%}" if pct else name])
+    # end labels: keep a minimum vertical gap so they never collide
+    lo, hi = ax.get_ylim()
+    gap = (hi - lo) * 0.05
+    ends.sort(key=lambda e: e[0])
+    ys = [e[0] for e in ends]
+    for i in range(1, len(ys)):
+        ys[i] = max(ys[i], ys[i - 1] + gap)
+    for (y0, x, label), y in zip(ends, ys):
+        ax.annotate(label, (x, y0), xytext=(x + pd.Timedelta(days=40), y), textcoords="data", fontsize=8.5,
+                    color=INK, va="center")
+    if pct:
+        ax.yaxis.set_major_formatter(mticker.PercentFormatter(1.0, decimals=0))
+        ax.axhline(0, color=AXIS, linewidth=1)
+    _grid(ax)
+    _titles(fig, title, subtitle)
+    leg = ax.legend(frameon=False, fontsize=9, ncol=4, loc="upper left")
+    for t in leg.get_texts():
+        t.set_color(INK_2)
+    xmax = max(q_to_ds(s.dropna().index[-1]) for s in series.values())
+    ax.set_xlim(right=xmax + pd.Timedelta(days=420))
+    fig.tight_layout(rect=(0, 0, 1, 0.88))
+    fig.savefig(path, dpi=160)
+    plt.close(fig)

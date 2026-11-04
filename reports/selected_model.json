@@ -1,7 +1,19 @@
 {
-  "model": "AutoARIMA",
+  "model": "AutoARIMA_log",
   "method": "BottomUp",
-  "rule": "lowest mean MASE across the 8 hierarchy series, all backtest windows, horizons 1-4, coherent forecasts only",
+  "intervals": "model",
+  "rule": "lowest mean MASE across the 8 hierarchy series (coherent forecasts; the incumbent AutoARIMA + BottomUp is kept unless beaten by >= 3%), then the interval kind with the lower mean scaled interval score",
+  "decision_log": {
+    "best_model": "AutoARIMA_log",
+    "best_method": "BottomUp",
+    "best_mean_mase": 0.48953136938467307,
+    "incumbent_model": "AutoARIMA",
+    "incumbent_method": "BottomUp",
+    "incumbent_mean_mase": 0.5142681029982222,
+    "materiality": 0.03,
+    "msis_model": 4.437266896727011,
+    "msis_conformal": 4.983764972285671
+  },
   "holdout_quarter": "2026Q3",
   "backtest_cutoffs": [
     "2023Q2",

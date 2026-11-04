@@ -15,6 +15,8 @@ COVERAGE = {
     **{c: "2017Q1" for c in COSTS + ["total_costs_expenses", "operating_income", "capex"]},
     **{c: "2019Q1" for c in SERVICES + ["google_cloud", "google_services_revenue", "hedging_gains_losses"]},
     **{c: "2020Q1" for c in SEGMENT_OI},
+    **{c: "2017Q1" for c in ["revenue_us", "revenue_emea", "revenue_apac", "revenue_other_americas"]},
+    "depreciation": "2023Q1",
 }
 
 

@@ -81,8 +81,8 @@ def main() -> None:
     tfm = F.score(bt, ["model", "method", "line"])
 
     ref = pd.read_csv(REPORTS_DIR / "backtest_per_line.csv")
-    keep = [(meta["model"], meta["method"]), ("SeasonalNaive", "base")]
-    ref = ref[[(m, k) in keep for m, k in zip(ref.model, ref.method)]]
+    keep = [(meta["model"], meta["method"], meta.get("intervals", "model")), ("SeasonalNaive", "base", "model")]
+    ref = ref[[(m, k, i) in keep for m, k, i in zip(ref.model, ref.method, ref.intervals)]].drop(columns="intervals")
     allm = pd.concat([tfm, ref], ignore_index=True)
     allm.to_csv(REPORTS_DIR / "timesfm_challenger.csv", index=False)
 
