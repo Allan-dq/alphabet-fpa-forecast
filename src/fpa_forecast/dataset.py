@@ -381,12 +381,32 @@ def tidy(q: pd.DataFrame, first_quarter: str = "2017Q1") -> pd.DataFrame:
     return q[cols].sort_values(["line", "fiscal_quarter"]).reset_index(drop=True)
 
 
+def headcount_rows() -> pd.DataFrame:
+    """Quarter-end employees from earnings releases (a count, not USD millions)."""
+    from .earnings_release import headcount_table
+
+    hc = headcount_table().sort_values("filed")
+    rows = []
+    for fq, g in hc.groupby("fiscal_quarter"):
+        per = pd.Period(fq, freq="Q")
+        rows.append(dict(fiscal_quarter=fq, period_start=per.start_time.date(), period_end=per.end_time.date(),
+                         line="headcount", value_m=float(g["employees"].iloc[-1]),
+                         derivation="earnings_release_8k", restated=bool(g["employees"].iloc[-1] != g["employees"].iloc[0]),
+                         first_value_m=float(g["employees"].iloc[0]), n_vintages=len(g),
+                         source_accessions=g["accession"].iloc[-1], first_accessions=g["accession"].iloc[0],
+                         source_urls=g["source_url"].iloc[-1]))
+    return pd.DataFrame(rows)
+
+
 def build(write: bool = True) -> dict[str, pd.DataFrame]:
     facts = load_facts()
     mapped = map_facts(facts)
     v = vintages(mapped)
     events = restatement_events(mapped)
     q = tidy(add_derived(quarterize(mapped, events)))
+    hc = headcount_rows()
+    q = pd.concat([q, hc[hc["fiscal_quarter"] >= q["fiscal_quarter"].min()]], ignore_index=True)
+    q = q.sort_values(["line", "fiscal_quarter"]).reset_index(drop=True)
     wide = q.pivot(index="fiscal_quarter", columns="line", values="value_m").reset_index()
     if write:
         INTERIM_DIR.mkdir(parents=True, exist_ok=True)

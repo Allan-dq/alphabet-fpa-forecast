@@ -16,6 +16,11 @@
 - A quarter is flagged `restated` if its latest value differs from the first reported value by more than $1M.
 - When Q4 is derived, the fiscal-year and nine-month values must come from filings with no basis change between them. Restatement events are grouped into "basis regimes": a recast rolls through the next four filings' comparative columns. This stops a recast from landing entirely in one Q4. See [`restatements.md`](../restatements.md).
 
+**Headcount.** XBRL has no employee count. `earnings_release.py` reads the "Number of employees" row from every quarterly earnings release (8-K Item 2.02, exhibit 99.1).
+- Releases use three different column-header formats; the parser handles all three.
+- The parser checks that the current column is the quarter just before the filing date.
+- Each quarter appears in two releases (current and year-ago column), and the two values agree for every quarter from 2017Q1 to 2026Q3.
+
 **Checks.** `tests/test_data.py` checks:
 - no missing quarters;
 - the four service lines sum to the separately tagged Google Services segment within $1M;
@@ -37,7 +42,7 @@ DuckDB tables `fact_quarterly` (long), `dim_line` and `forecasts`, plus eight vi
 - `revenue_geography`
 - `fx_exposure`
 
-The SQL is plain ANSI: conditional aggregation, `LAG`, named windows and `NULLIF` division. The same statements run on BigQuery ([`bigquery/README.md`](../bigquery/README.md)). `sql/queries/backtest_accuracy.sql` recomputes the backtest metrics in SQL, and a test checks they match the Python metrics exactly.
+The SQL is plain ANSI: conditional aggregation, `LAG`, named windows and `NULLIF` division. The same statements were run in a BigQuery sandbox. `bigquery/verify_against_duckdb.py` confirmed that every view matches DuckDB on row counts and on the sum of every numeric column ([`bigquery/README.md`](../bigquery/README.md)). `sql/queries/backtest_accuracy.sql` recomputes the backtest metrics in SQL, and a test checks they match the Python metrics exactly.
 
 ## 3. Forecasting
 

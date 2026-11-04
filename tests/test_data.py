@@ -17,6 +17,7 @@ COVERAGE = {
     **{c: "2020Q1" for c in SEGMENT_OI},
     **{c: "2017Q1" for c in ["revenue_us", "revenue_emea", "revenue_apac", "revenue_other_americas"]},
     "depreciation": "2023Q1",
+    "headcount": "2017Q1",
 }
 
 
@@ -110,3 +111,10 @@ def test_known_restatements_are_flagged(long, quarter, line):
 def test_every_row_has_a_source(long):
     assert long["source_accessions"].fillna("").str.len().gt(0).all()
     assert long["source_urls"].fillna("").str.startswith("https://www.sec.gov/").all()
+
+
+def test_headcount_comes_from_earnings_releases(long):
+    hc = long[long.line == "headcount"]
+    assert (hc.derivation == "earnings_release_8k").all()
+    assert hc.source_urls.str.contains("exhibit99", case=False).all()
+    assert (hc.value_m > 50_000).all() and (hc.restated == False).all()  # noqa: E712

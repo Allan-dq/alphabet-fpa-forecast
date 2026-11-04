@@ -56,7 +56,7 @@ def main() -> None:
     sql_out = REPORTS_DIR / "sql"
     sql_out.mkdir(exist_ok=True)
     for view in ["pnl_quarterly", "revenue_mix", "opex_ratios", "segment_margin", "ttm_metrics", "revenue_geography",
-                 "fx_exposure"]:
+                 "fx_exposure", "productivity"]:
         sql_layer.query(con, f"SELECT * FROM {view} ORDER BY ALL").to_csv(sql_out / f"{view}.csv", index=False)
     sql_layer.query(con, (REPORTS_DIR.parent / "sql" / "queries" / "backtest_accuracy.sql").read_text()).to_csv(
         sql_out / "backtest_accuracy.csv", index=False)
@@ -73,9 +73,10 @@ def main() -> None:
     tr = track.track_record(wide, result, assumptions, quarters)
     report.experiments_report(result, e2, tr)
     geo = report.geography_report(con, pnl_out)
+    prod = report.productivity_report(con)
 
     print("[5/5] executive summary")
-    report.exec_summary(wide, con, result, bt, pnl_out, var, sc, assumptions, track=tr, geo=geo)
+    report.exec_summary(wide, con, result, bt, pnl_out, var, sc, assumptions, track=tr, geo=geo, hc=prod)
     report.update_readme(report.readme_results(result, bt, pnl_out, var, track=tr, geo=geo))
     con.close()
     print(f"done in {time.time() - t0:.0f}s -> reports/")

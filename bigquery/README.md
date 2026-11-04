@@ -1,25 +1,49 @@
-# Running the SQL layer on BigQuery
+# BigQuery and Data Studio
 
-The views in [`../sql`](../sql) are written in ANSI SQL that DuckDB and BigQuery both accept: conditional aggregation, `LAG`, named `WINDOW` clauses and `NULLIF` division. The BigQuery sandbox (free, no billing account) is enough.
+The SQL views in [`../sql`](../sql) are written in ANSI SQL that DuckDB and BigQuery both accept: conditional aggregation, `LAG`, named `WINDOW` clauses and `NULLIF` division.
 
-> Status: these steps are documentation only. No BigQuery dataset or Looker Studio dashboard has been built for this repo yet.
+This layer has been built in a BigQuery sandbox project (free tier, no billing account) and checked against DuckDB.
+
+## Load and create the views
 
 ```bash
-# 1. Create a dataset in your own project
-bq mk --dataset YOUR_PROJECT:alphabet_fpa
-
-# 2. Load the tables produced by `python run_pipeline.py`
-bq load --autodetect --source_format=CSV alphabet_fpa.fact_quarterly data/processed/alphabet_quarterly_long.csv
-bq load --autodetect --source_format=CSV alphabet_fpa.dim_line       data/reference/dim_line.csv
-bq load --autodetect --source_format=CSV alphabet_fpa.forecasts      data/processed/forecasts.csv
-
-# 3. Create the views; the default dataset resolves the unqualified table names
-for f in sql/0*.sql; do
-  bq query --use_legacy_sql=false --dataset_id=YOUR_PROJECT:alphabet_fpa < "$f"
-done
+python run_pipeline.py                              # produces data/processed/*.csv
+gcloud auth login                                   # once
+bash bigquery/load_bigquery.sh <your-project-id>    # dataset alphabet_fpa by default
 ```
 
-Notes
-- BigQuery needs `CREATE OR REPLACE VIEW alphabet_fpa.<name>` when no default dataset is set. The `--dataset_id` flag above avoids editing the files.
-- `period_end` is loaded as `DATE` by autodetect. `LAG(...) OVER (... ORDER BY period_end)` works the same in both engines.
-- A Looker Studio report or Connected Sheet can read `pnl_quarterly`, `revenue_mix` and `forecast_vs_actual` directly.
+`load_bigquery.sh`:
+- creates the dataset;
+- loads `fact_quarterly`, `dim_line` and `forecasts` with explicit schemas;
+- creates the nine views from `sql/0*.sql`, rewriting table names to fully qualified `project.dataset.table`, because BigQuery views cannot rely on a default dataset;
+- creates four `dash_*` helper views for the dashboard (`dashboard_views.sql`).
+
+## Verified against DuckDB
+
+```bash
+python bigquery/verify_against_duckdb.py <your-project-id>
+```
+
+The script compares row counts and the sum of every numeric column for all nine views. On 2026-11-04 every view matched, with a maximum relative difference of 8e-15 (floating-point noise):
+
+| View | Rows |
+|---|---:|
+| `pnl_quarterly` | 39 |
+| `revenue_mix` | 225 |
+| `opex_ratios` | 39 |
+| `segment_margin` | 108 |
+| `ttm_metrics` | 39 |
+| `forecast_vs_actual` | 26,112 |
+| `revenue_geography` | 156 |
+| `fx_exposure` | 31 |
+| `productivity` | 39 |
+
+## Dashboard (Data Studio, formerly Looker Studio)
+
+![Data Studio dashboard](../reports/figures/data_studio_dashboard.png)
+
+The report reads two BigQuery views:
+- **`dash_forecast`:** actual revenue excluding hedging, plus the live 8-quarter forecast.
+- **`dash_forecast_track`:** every one-quarter-ahead forecast from the backtest and the holdout. Variance % is actual minus forecast, divided by forecast.
+
+The report lives in the repo owner's Data Studio account and is not shared publicly. The screenshot above is the evidence.

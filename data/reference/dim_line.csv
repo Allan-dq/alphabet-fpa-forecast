@@ -26,3 +26,4 @@ revenue_us,United States,geography,total_revenue_ex_hedging,24
 revenue_emea,EMEA,geography,total_revenue_ex_hedging,25
 revenue_apac,APAC,geography,total_revenue_ex_hedging,26
 revenue_other_americas,Other Americas,geography,total_revenue_ex_hedging,27
+headcount,Employees (quarter end),operating_metric,,28

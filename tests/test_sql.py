@@ -5,7 +5,7 @@ import pytest
 from fpa_forecast import sql_layer
 
 VIEWS = ["pnl_quarterly", "revenue_mix", "opex_ratios", "segment_margin", "ttm_metrics", "forecast_vs_actual",
-         "revenue_geography", "fx_exposure"]
+         "revenue_geography", "fx_exposure", "productivity"]
 
 
 @pytest.fixture(scope="module")
@@ -78,3 +78,9 @@ def test_geography_shares_and_total(con):
     assert ((new.regions - (new.total - new.hedging)).abs() <= 1).all()   # regions exclude hedging from 2019
     old = df[df.fiscal_quarter < "2019Q1"]
     assert ((old.regions - old.total).abs() <= 1).all()                  # 2017-2018 regions include it
+
+
+def test_productivity_revenue_per_employee(con):
+    df = sql_layer.query(con, "SELECT * FROM productivity WHERE fiscal_quarter = '2026Q3'")
+    ttm = sql_layer.query(con, "SELECT revenue_ttm FROM ttm_metrics WHERE fiscal_quarter = '2026Q3'").revenue_ttm.item()
+    assert df.revenue_ttm_per_employee_k.item() == pytest.approx(ttm * 1000 / df.employees.item())

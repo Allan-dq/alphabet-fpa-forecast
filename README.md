@@ -7,7 +7,7 @@
 A quarterly planning workflow for Alphabet built from its SEC filings:
 
 1. **Data.** Revenue by type, segment results and cost lines are parsed from 41 10-Q/10-K XBRL filings. Each number carries its source, and restatements are detected automatically.
-2. **SQL reporting layer.** DuckDB, written in BigQuery-compatible SQL. Views: P&L, revenue mix, OpEx ratios, segment margins, TTM metrics, forecast vs actual, revenue by region, FX exposure.
+2. **SQL reporting layer.** DuckDB, written in BigQuery-compatible SQL. Views: P&L, revenue mix, OpEx ratios, segment margins, TTM metrics, forecast vs actual, revenue by region, FX exposure, headcount productivity. The same views also run in a BigQuery sandbox (checked against DuckDB) and feed a Data Studio dashboard ([`bigquery/`](bigquery/README.md)).
 3. **Hierarchical revenue forecast.** statsforecast models, including log-scale ARIMA and a combination, reconciled with BottomUp, TopDown and MinTrace so that the revenue lines add up to the total. The model and its interval method are chosen on a rolling-origin backtest, by rules committed before the tests ran.
 4. **FP&A outputs.**
    - next-4-quarter P&L driven by `assumptions.yaml`, with a capex → depreciation memo;
@@ -49,7 +49,7 @@ Selected by rules fixed in advance ([`docs/experiments.md`](docs/experiments.md)
 
 </details>
 
-**Challenger: TimesFM 2.5 (zero-shot).** Best variant `BottomUp`: mean MASE 0.71, total WAPE 5.9%, vs 0.49 / 3.2% for the selected model. [Details](reports/timesfm_challenger.md).
+**Challengers: Google's TimesFM, zero-shot.** TimesFM-2.5 (BottomUp): mean MASE 0.71, total WAPE 5.9%; TimesFM-3.0 (BottomUp): mean MASE 0.56, total WAPE 4.0%. Selected model: 0.49 / 3.2%. [Details](reports/timesfm_challenger.md).
 
 ### Forecast
 
@@ -122,7 +122,9 @@ export SEC_USER_AGENT="Your Name your.email@example.com"
 make refetch        # downloads 41 XBRL instances (~110 MB) into data/raw/ and rebuilds data/processed/
 ```
 
-Optional challenger (torch and a ~925 MB checkpoint): `pip install -e ".[timesfm]" && python scripts/timesfm_challenger.py`.
+Optional challengers (torch and ~2.2 GB of checkpoints): `pip install -e ".[timesfm]" && python scripts/timesfm_challenger.py`.
+- TimesFM 2.5 is Apache-2.0.
+- TimesFM 3.0 is under Google's TimesFM Non-Commercial License; it is used here only for this non-commercial educational comparison, and the weights are not redistributed.
 
 ## Repository map
 
@@ -131,7 +133,9 @@ Optional challenger (torch and a ~925 MB checkpoint): `pip install -e ".[timesfm
 | `src/fpa_forecast/sec_fetch.py`, `xbrl_parse.py`, `dataset.py` | EDGAR download, XBRL parsing, line mapping, vintages, Q4 derivation, restatement detection |
 | `data/processed/alphabet_quarterly_long.csv` | One row per quarter × line, with derivation, `restated` flag and source URLs |
 | `restatements.md` | Every segment and definition change found, with its size |
-| `sql/*.sql`, `src/fpa_forecast/sql_layer.py` | DuckDB tables and views. [`bigquery/`](bigquery/README.md) shows how to load the same tables into BigQuery |
+| `src/fpa_forecast/earnings_release.py` | Quarter-end headcount parsed from earnings-release exhibits (8-K 99.1) |
+| `sql/*.sql`, `src/fpa_forecast/sql_layer.py` | DuckDB tables and views |
+| `bigquery/` | Load script, DuckDB-vs-BigQuery check, dashboard views and a Data Studio screenshot |
 | `src/fpa_forecast/forecasting.py` | Hierarchy, base models, conformal intervals, reconciliation, backtest, metrics, model selection |
 | `src/fpa_forecast/track.py`, `docs/experiments.md` | 8-quarter track record; pre-registered experiments and their amendments |
 | `assumptions.yaml`, `src/fpa_forecast/fpa.py` | Cost assumptions, depreciation driver, P&L, variance bridges, scenarios |
@@ -145,6 +149,7 @@ Optional challenger (torch and a ~925 MB checkpoint): `pip install -e ".[timesfm
 - **Q4** is fiscal year minus nine months, combining only filings on the same basis.
 - **Depreciation** uses `us-gaap:Depreciation`, which the FY2023 10-K introduced in place of a broader tag, so quarterly values start in 2023Q1.
 - **Revenue by region** includes hedging in 2017–2018 and excludes it from 2019.
+- **Headcount** is not XBRL-tagged. It is parsed from the "Number of employees" row of every earnings release, 2017Q1 onward; each quarter's two reported values agree.
 - **Hedging gains (losses)** are tagged separately only from mid-2025 filings. Earlier, they are total revenue minus the segments, and a test checks that they stay under 1.5% of revenue.
 - **Restatements found:**
   - Nest moved into Google (2018);
@@ -163,7 +168,7 @@ Optional challenger (torch and a ~925 MB checkpoint): `pip install -e ".[timesfm
 - **FX.** The FX sensitivity is mechanical translation only; constant-currency data are not XBRL-tagged.
 - **Segment operating income** has basis breaks (2022Q1 and 2023Q2), so it is reported, not forecast.
 - **Backtest data.** The backtest uses today's restated data, not real-time vintages. The revenue lines were not restated after 2020.
-- **BigQuery.** The [`bigquery/`](bigquery/README.md) folder documents how to load the same tables into the sandbox. No hosted dashboard was built.
+- **BigQuery / Data Studio.** The BigQuery views match DuckDB, and the Data Studio dashboard exists in the owner's account. It is private, so the repo shows a screenshot instead of a link.
 
 Details: [`docs/methodology.md`](docs/methodology.md).
 

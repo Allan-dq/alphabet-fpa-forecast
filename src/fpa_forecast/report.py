@@ -288,7 +288,7 @@ def forecast_charts(wide, result) -> None:
 
 
 # ------------------------------------------------------------ exec summary
-def exec_summary(wide, con, result, bt, pnl_out, var, sc, assumptions, track=None, geo=None) -> str:
+def exec_summary(wide, con, result, bt, pnl_out, var, sc, assumptions, track=None, geo=None, hc=None) -> str:
     from . import sql_layer
 
     w = wide.set_index("fiscal_quarter")
@@ -367,7 +367,9 @@ def exec_summary(wide, con, result, bt, pnl_out, var, sc, assumptions, track=Non
         f"Search & other YoY growth ({pct(mix.loc['search_other','yoy_growth'])} in {last}).",
         f"Capex intensity, TTM ({pct(ttm.iloc[-1].capex_intensity_ttm)}) and cost of revenues as % of revenue.",
     ] + ([f"FX: non-US customers are {pct(geo['non_us_share_ttm'])} of revenue (TTM); a 5% stronger USD would lower "
-          f"four-quarter revenue by about {bn(geo['fx5'])} before hedging."] if geo is not None else []) + [
+          f"four-quarter revenue by about {bn(geo['fx5'])} before hedging."] if geo is not None else []) + (
+        [f"Headcount {hc['employees']:,.0f} ({hc['yoy']:+.1%} YoY) and TTM revenue per employee "
+         f"(${hc['rev_per_emp_m']:.2f}M) as opex grows with depreciation."] if hc is not None else []) + [
         f"Operating-margin range across the Cloud +/-5pp and Search +/-2pp grid: {sens.values.min():.1f}%-{sens.values.max():.1f}%.",
     ]
     sections = {"headline": headline, "drivers": drivers, "risks": risks, "watch": watch}
@@ -389,7 +391,7 @@ def exec_summary(wide, con, result, bt, pnl_out, var, sc, assumptions, track=Non
 **Metrics to watch**
 """ + "\n".join(f"- {d}" for d in watch) + """
 
-Details: [P&L](pnl_forecast.md) · [backtest](backtest_summary.md) · [variance](variance_""" + var["quarter"] + """.md) · [track record and experiments](experiments.md) · [scenarios](scenarios.md) · [geography/FX](geography_fx.md) · [method](../docs/methodology.md)
+Details: [P&L](pnl_forecast.md) · [backtest](backtest_summary.md) · [variance](variance_""" + var["quarter"] + """.md) · [track record and experiments](experiments.md) · [scenarios](scenarios.md) · [geography/FX](geography_fx.md) · [headcount](headcount.md) · [method](../docs/methodology.md)
 """
     (REPORTS_DIR / "exec_summary.md").write_text(md)
     (REPORTS_DIR / "exec_summary.json").write_text(json.dumps(sections, indent=2))
@@ -458,10 +460,12 @@ def readme_results(result, bt, pnl_out, var, track=None, geo=None) -> str:
         tf = pd.read_csv(tfm_path)
         g = tf.groupby(["model", "method"])["mase"].mean()
         tot = tf[tf.line == "total_revenue_ex_hedging"].set_index(["model", "method"])["wape"]
-        best_tfm = g.loc["TimesFM-2.5"].idxmin()
-        tfm_line = (f"\n**Challenger: TimesFM 2.5 (zero-shot).** Best variant `{best_tfm}`: mean MASE "
-                    f"{g.loc[('TimesFM-2.5', best_tfm)]:.2f}, total WAPE {tot.loc[('TimesFM-2.5', best_tfm)]:.1%}, vs "
-                    f"{g.loc[(ch['model'], ch['method'])]:.2f} / {tot.loc[(ch['model'], ch['method'])]:.1%} for the selected model. "
+        parts = []
+        for name in [m for m in ["TimesFM-2.5", "TimesFM-3.0"] if m in g.index.get_level_values(0)]:
+            best = g.loc[name].idxmin()
+            parts.append(f"{name} ({best}): mean MASE {g.loc[(name, best)]:.2f}, total WAPE {tot.loc[(name, best)]:.1%}")
+        tfm_line = (f"\n**Challengers: Google's TimesFM, zero-shot.** " + "; ".join(parts) +
+                    f". Selected model: {g.loc[(ch['model'], ch['method'])]:.2f} / {tot.loc[(ch['model'], ch['method'])]:.1%}. "
                     f"[Details](reports/timesfm_challenger.md).\n")
     track_md = ""
     if track is not None:
@@ -702,3 +706,34 @@ include hedging, so comparisons across 2019 have a small break.
 """
     (REPORTS_DIR / "geography_fx.md").write_text(text)
     return {"non_us_share_ttm": non_us_share_ttm, "fx5": fx5, "last": last, "share": share}
+
+
+# ------------------------------------------------------------- productivity
+def productivity_report(con) -> dict:
+    from . import sql_layer
+
+    p = sql_layer.query(con, "SELECT * FROM productivity ORDER BY fiscal_quarter")
+    last8 = p.tail(8).set_index("fiscal_quarter")[["employees", "employees_yoy", "revenue_ttm_per_employee_k",
+                                                    "operating_income_ttm_per_employee_k", "opex_per_employee_k_quarter"]]
+    last = p.iloc[-1]
+    yr = p[p["fiscal_quarter"] == str(pd.Period(last.fiscal_quarter, freq="Q") - 4)].iloc[0]
+    pre = p[p["fiscal_quarter"] <= "2023Q1"]
+    peak = pre.loc[pre["employees"].idxmax()]
+    post = p[p["fiscal_quarter"] > peak.fiscal_quarter]
+    trough = post.loc[post["employees"].idxmin()]
+    text = f"""# Headcount and productivity
+
+Quarter-end employees come from the "Number of employees" row in each earnings release (8-K exhibit 99.1);
+headcount is not XBRL-tagged. Every quarter appears in two releases (current and year-ago column) and the
+two values agree in every case. SQL: `sql/09_productivity.sql`. Per-employee figures are USD thousands.
+
+{md_table(last8, {'employees': '{:,.0f}', 'employees_yoy': '{:+.1%}'}, default='{:,.0f}')}
+
+- {last.fiscal_quarter}: {last.employees:,.0f} employees ({last.employees_yoy:+.1%} YoY); trailing-12-month revenue per employee
+  ${last.revenue_ttm_per_employee_k / 1000:,.2f}M vs ${yr.revenue_ttm_per_employee_k / 1000:,.2f}M a year earlier.
+- Headcount fell from its {peak.fiscal_quarter} peak of {peak.employees:,.0f} to {trough.employees:,.0f} in {trough.fiscal_quarter}
+  after the 2023 layoffs, then grew again to a new high.
+"""
+    (REPORTS_DIR / "headcount.md").write_text(text)
+    return {"employees": float(last.employees), "yoy": float(last.employees_yoy),
+            "rev_per_emp_m": float(last.revenue_ttm_per_employee_k) / 1000, "quarter": last.fiscal_quarter}

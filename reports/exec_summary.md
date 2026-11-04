@@ -21,6 +21,7 @@ For the next four quarters (2026Q4-2027Q3) we forecast revenue of **$610.7B**, 2
 - Search & other YoY growth (12.0% in 2026Q3).
 - Capex intensity, TTM (33.9%) and cost of revenues as % of revenue.
 - FX: non-US customers are 49.5% of revenue (TTM); a 5% stronger USD would lower four-quarter revenue by about $15.1B before hedging.
+- Headcount 204,757 (+7.7% YoY) and TTM revenue per employee ($2.30M) as opex grows with depreciation.
 - Operating-margin range across the Cloud +/-5pp and Search +/-2pp grid: 33.4%-34.3%.
 
-Details: [P&L](pnl_forecast.md) · [backtest](backtest_summary.md) · [variance](variance_2026Q3.md) · [track record and experiments](experiments.md) · [scenarios](scenarios.md) · [geography/FX](geography_fx.md) · [method](../docs/methodology.md)
+Details: [P&L](pnl_forecast.md) · [backtest](backtest_summary.md) · [variance](variance_2026Q3.md) · [track record and experiments](experiments.md) · [scenarios](scenarios.md) · [geography/FX](geography_fx.md) · [headcount](headcount.md) · [method](../docs/methodology.md)
