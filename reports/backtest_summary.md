@@ -21,7 +21,7 @@ forecasts per series. Training data start in 2019Q1.
 ## Selected model by series
 
 | Series | MAPE | WAPE | MASE | Seasonal-naive WAPE | Seasonal-naive MASE | 80% coverage | 95% coverage |
-|---:|---:|---:|---:|---:|---:|---:|---:|
+|---|---:|---:|---:|---:|---:|---:|---:|
 | Total revenue excl. hedging | 3.7% | 3.9% | 0.40 | 14.0% | 1.44 | 71.4% | 85.7% |
 | Google Services | 2.8% | 2.9% | 0.30 | 11.3% | 1.17 | 85.7% | 100.0% |
 | Google Cloud | 8.4% | 10.1% | 0.82 | 30.0% | 2.45 | 19.0% | 35.7% |
@@ -36,7 +36,7 @@ forecasts per series. Training data start in 2019Q1.
 `base` = unreconciled base forecasts, shown for reference; only coherent combinations were eligible for selection.
 
 | rank | model | method | mean_mase | mean_wape | total_wape | total_mase | coverage_80 | coverage_95 |
-|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+|---:|---|---|---:|---:|---:|---:|---:|---:|
 | 1 | AutoARIMA | BottomUp | 0.514 | 6.7% | 3.9% | 0.403 | 76.8% | 86.6% |
 | 2 | AutoARIMA | MinT | 0.520 | 6.8% | 3.9% | 0.401 | 79.5% | 87.2% |
 | 3 | AutoARIMA | base | 0.525 | 6.8% | 4.4% | 0.449 | 79.5% | 87.8% |

@@ -3,7 +3,7 @@
 USD millions. Revenue lines: `AutoARIMA` + `BottomUp` forecast with data through 2026Q3.
 Hedging gains (losses) planned at $0M. Costs: `assumptions.yaml`.
 
-| index | 2026Q4 | 2027Q1 | 2027Q2 | 2027Q3 | Next 4Q | Prior 4Q (actual) | YoY % |
+|  | 2026Q4 | 2027Q1 | 2027Q2 | 2027Q3 | Next 4Q | Prior 4Q (actual) | YoY % |
 |---|---:|---:|---:|---:|---:|---:|---:|
 | Search & other | 68,225.4 | 66,202.6 | 68,154.4 | 69,782.5 | 272,364.9 | 250,093.0 | +8.9% |
 | YouTube ads | 12,483.6 | 11,140.7 | 11,967.0 | 12,243.9 | 47,835.3 | 43,528.0 | +9.9% |
@@ -25,7 +25,7 @@ Operating margin: **32.2%** next 4 quarters vs **33.3%** in the prior 4 reported
 ## Cost assumptions as resolved
 
 | Cost line | Method | Trend (pp YoY) | Source |
-|---:|---:|---:|---:|
+|---|---|---:|---|
 | Cost of revenues | same_quarter_ly_plus_trend | +0.00 | explicit |
 | Research & development | same_quarter_ly_plus_trend | +1.36 | auto: mean YoY change, last 4 quarters |
 | Sales & marketing | same_quarter_ly_plus_trend | -0.21 | auto: mean YoY change, last 4 quarters |
@@ -33,7 +33,7 @@ Operating margin: **32.2%** next 4 quarters vs **33.3%** in the prior 4 reported
 
 Planned cost ratios (% of total revenue):
 
-| index | Cost of revenues | Research & development | Sales & marketing | General & administrative |
+|  | Cost of revenues | Research & development | Sales & marketing | General & administrative |
 |---|---:|---:|---:|---:|
 | 2026Q4 | 40.21% | 17.68% | 7.01% | 4.72% |
 | 2027Q1 | 37.55% | 16.86% | 6.72% | 4.72% |

@@ -93,7 +93,7 @@ def main() -> None:
     summary = summary.join(total.add_prefix("total_"), on=["model", "method"]).sort_values("mean_mase")
     wide_mase = allm.pivot_table(index="line", columns=["model", "method"], values="mase")
     wide_mase.columns = [f"{m} / {k}" for m, k in wide_mase.columns]
-    wide_mase.index = [SERIES_NAMES[i] for i in wide_mase.index]
+    wide_mase.index = pd.Index([SERIES_NAMES[i] for i in wide_mase.index], name="Series")
     winner = summary.iloc[0]
     text = f"""# Challenger: TimesFM 2.5 (zero-shot)
 

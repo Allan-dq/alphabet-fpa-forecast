@@ -3,7 +3,7 @@
 The 2026Q3 forecast uses only data through 2026Q2: revenue from the selected model (h = 1), costs from
 `assumptions.yaml` resolved as of 2026Q2. 2026Q3 was not used for model selection.
 
-| index | forecast | actual | variance | variance_pct |
+|  | forecast | actual | variance | variance_pct |
 |---|---:|---:|---:|---:|
 | Search & other | 64,491.2 | 63,350.0 | -1,141.2 | -1.8% |
 | YouTube ads | 11,349.3 | 11,207.0 | -142.3 | -1.3% |
@@ -27,7 +27,7 @@ The 2026Q3 forecast uses only data through 2026Q2: revenue from the selected mod
 
 ## Cost ratios: plan vs actual
 
-| index | Planned % of revenue | Actual % of revenue | Difference (pp) |
+|  | Planned % of revenue | Actual % of revenue | Difference (pp) |
 |---|---:|---:|---:|
 | Cost of revenues | 40.42% | 40.30% | -0.12 |
 | Research & development | 16.00% | 16.18% | +0.18 |

@@ -29,8 +29,12 @@ SERIES_NAMES = {
 def md_table(df: pd.DataFrame, fmt: dict | None = None, index: bool = True, default: str = "{:,.1f}") -> str:
     fmt = fmt or {}
     d = df.reset_index() if index else df.copy()
+    if index and d.columns[0] == "index":
+        d = d.rename(columns={"index": ""})
     cols = [str(c) for c in d.columns]
-    lines = ["| " + " | ".join(cols) + " |", "|" + "|".join("---" if i == 0 and index else "---:" for i in range(len(cols))) + "|"]
+    align = ["---:" if pd.api.types.is_numeric_dtype(d[c]) and not pd.api.types.is_bool_dtype(d[c]) else "---"
+             for c in d.columns]
+    lines = ["| " + " | ".join(cols) + " |", "|" + "|".join(align) + "|"]
     for _, r in d.iterrows():
         cells = []
         for c, v in zip(d.columns, r.values):

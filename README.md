@@ -35,7 +35,7 @@ Selected by a rule fixed in advance (lowest mean MASE across the 8 hierarchy ser
 <details><summary>By series (selected model)</summary>
 
 | Series | MAPE | WAPE | MASE | Seasonal-naive WAPE | Seasonal-naive MASE | 80% coverage | 95% coverage |
-|---:|---:|---:|---:|---:|---:|---:|---:|
+|---|---:|---:|---:|---:|---:|---:|---:|
 | Total revenue excl. hedging | 3.7% | 3.9% | 0.40 | 14.0% | 1.44 | 71.4% | 85.7% |
 | Google Services | 2.8% | 2.9% | 0.30 | 11.3% | 1.17 | 85.7% | 100.0% |
 | Google Cloud | 8.4% | 10.1% | 0.82 | 30.0% | 2.45 | 19.0% | 35.7% |
@@ -46,6 +46,8 @@ Selected by a rule fixed in advance (lowest mean MASE across the 8 hierarchy ser
 | Subscriptions, platforms & devices | 5.3% | 5.5% | 0.54 | 15.2% | 1.49 | 66.7% | 83.3% |
 
 </details>
+
+**Challenger: TimesFM 2.5 (zero-shot).** Best variant `BottomUp`: mean MASE 0.71, total WAPE 5.9%, vs 0.51 / 3.9% for the selected model. [Details](reports/timesfm_challenger.md).
 
 ### Forecast
 
