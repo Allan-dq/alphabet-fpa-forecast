@@ -50,7 +50,8 @@ for f in FILES:
             if c in LOOSE["columns"]:
                 rtol[conformal, j] = LOOSE["rtol"]
     a, b = new[num].to_numpy(float), old[num].to_numpy(float)
-    close = (np.abs(a - b) <= ATOL + rtol * np.abs(b)) | (np.isnan(a) & np.isnan(b))
+    with np.errstate(invalid="ignore"):
+        close = (a == b) | (np.abs(a - b) <= ATOL + rtol * np.abs(b)) | (np.isnan(a) & np.isnan(b))
     if not close.all():
         bad.append(f"{f}: {int((~close).sum())} numbers differ beyond rtol={RTOL}")
         rows, cols = np.where(~close)
