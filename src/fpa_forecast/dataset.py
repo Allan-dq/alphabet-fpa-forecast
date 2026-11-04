@@ -68,7 +68,7 @@ class LineRule:
     concepts: frozenset[str]
     match: Callable[[dict[str, str]], bool]
     filed_from: str = "1900-01-01"
-    flow: str = "income"  # "income" (discrete quarters) or "ytd" (cash flow)
+    flow: str = "income"  # "income" (discrete quarters), "ytd" (cash flow) or "instant" (balance sheet)
 
 
 def _only(**want: str) -> Callable[[dict[str, str]], bool]:
@@ -87,6 +87,12 @@ def _cloud(d: dict[str, str]) -> bool:
     return _product("GoogleCloudMember")(d) or d == {"StatementBusinessSegmentsAxis": "GoogleCloudMember"}
 
 
+def _geo(member: str) -> Callable[[dict[str, str]], bool]:
+    def f(d: dict[str, str]) -> bool:
+        return d == {"StatementGeographicalAxis": member}
+    return f
+
+
 def _seg_oi(member: str) -> Callable[[dict[str, str]], bool]:
     def f(d: dict[str, str]) -> bool:
         return d == {"ConsolidationItemsAxis": "OperatingSegmentsMember", "StatementBusinessSegmentsAxis": member}
@@ -94,6 +100,8 @@ def _seg_oi(member: str) -> Callable[[dict[str, str]], bool]:
 
 
 REV = frozenset(REVENUE_CONCEPTS)
+GEO = frozenset({"us-gaap:Revenues", "us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax"})
+GEO_LINES = ["revenue_us", "revenue_emea", "revenue_apac", "revenue_other_americas"]
 RULES: list[LineRule] = [
     LineRule("total_revenue", frozenset({"us-gaap:Revenues", "us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax"}), _only()),
     LineRule("search_other", REV, _product("GoogleSearchOtherMember"), NEW_REVENUE_DISCLOSURE),
@@ -115,6 +123,14 @@ RULES: list[LineRule] = [
     LineRule("oi_other_bets", frozenset({"us-gaap:OperatingIncomeLoss"}), _seg_oi("AllOtherSegmentsMember"), SEGMENTS_FROM),
     LineRule("oi_alphabet_level", frozenset({"us-gaap:OperatingIncomeLoss"}), _only(ConsolidationItemsAxis="CorporateNonSegmentMember"), SEGMENTS_FROM),
     LineRule("capex", frozenset({"us-gaap:PaymentsToAcquirePropertyPlantAndEquipment"}), _only(), flow="ytd"),
+    # Cash-flow depreciation. The 10-K for FY2023 replaced "depreciation and impairment on disposition of
+    # property and equipment" with plain us-gaap:Depreciation (FY2021: 11,555 vs 10,273), so only the new
+    # tag is used: quarterly values exist from 2023Q1 on one definition.
+    LineRule("depreciation", frozenset({"us-gaap:Depreciation"}), _only(), flow="ytd"),
+    LineRule("revenue_us", GEO, _geo("US")),
+    LineRule("revenue_emea", GEO, _geo("EMEAMember")),
+    LineRule("revenue_apac", GEO, _geo("AsiaPacificMember")),
+    LineRule("revenue_other_americas", GEO, _geo("AmericasExcludingUnitedStatesMember")),
 ]
 
 REVENUE_LINES = ["search_other", "youtube_ads", "google_network", "subscriptions_platforms_devices",
@@ -142,11 +158,12 @@ def load_facts(use_cache: bool = True) -> pd.DataFrame:
 
 def map_facts(facts: pd.DataFrame) -> pd.DataFrame:
     """Keep only facts that match a line rule; one row per (line, period, filing)."""
-    facts = facts[~facts["instant"] & ~facts["typed_dims"] & (facts["unit"].str.upper() == "USD")].copy()
+    facts = facts[~facts["typed_dims"] & (facts["unit"].str.upper() == "USD")].copy()
     facts["dd"] = facts["dims"].map(_dims_dict)
     out = []
     for rule in RULES:
-        sub = facts[facts["concept"].isin(rule.concepts) & (facts["filed"] >= rule.filed_from)]
+        sub = facts[facts["concept"].isin(rule.concepts) & (facts["filed"] >= rule.filed_from)
+                    & (facts["instant"] == (rule.flow == "instant"))]
         sub = sub[sub["dd"].map(rule.match)]
         if sub.empty:
             continue
@@ -160,8 +177,11 @@ def map_facts(facts: pd.DataFrame) -> pd.DataFrame:
     m["pref"] = m["concept"].map(pref).fillna(2)
     m = m.sort_values(["line", "start", "end", "accession", "pref"])
     m = m.drop_duplicates(["line", "start", "end", "accession"], keep="first")
-    m["days"] = (pd.to_datetime(m["end"]) - pd.to_datetime(m["start"])).dt.days + 1
+    inst = m["flow"] == "instant"
+    m.loc[inst, "start"] = ""
+    m["days"] = (pd.to_datetime(m["end"]) - pd.to_datetime(m["start"].where(~inst, m["end"]))).dt.days + 1
     m["span"] = pd.cut(m["days"], bins=[0, 100, 190, 280, 380], labels=["3M", "6M", "9M", "12M"]).astype(str)
+    m.loc[inst, "span"] = "instant"
     cols = ["line", "flow", "concept", "dims", "start", "end", "span", "value_m", "accession", "form", "filed", "report_date"]
     return m[cols].reset_index(drop=True)
 
@@ -237,10 +257,20 @@ def _diff_pair(cur: pd.DataFrame, prev: pd.DataFrame, events: list[str]):
 
 def quarterize(mapped: pd.DataFrame, events: pd.DataFrame) -> pd.DataFrame:
     """Turn reported spans into one value per fiscal quarter per line."""
-    m = mapped.copy()
+    rows = []
+    for line, g in mapped[mapped["flow"] == "instant"].groupby("line"):
+        for end, gg in g.sort_values("filed").groupby("end"):
+            e = pd.Timestamp(end)
+            if e != e + pd.offsets.QuarterEnd(0):
+                continue
+            rows.append(dict(value_m=gg["value_m"].iloc[-1], first_value_m=gg["value_m"].iloc[0],
+                             derivation="reported_instant", n_vintages=len(gg),
+                             source_accessions=gg["accession"].iloc[-1], first_accessions=gg["accession"].iloc[0],
+                             restated=bool(abs(gg["value_m"].iloc[-1] - gg["value_m"].iloc[0]) > RESTATEMENT_TOL_M),
+                             line=line, fiscal_quarter=f"{e.year}Q{(e.month - 1) // 3 + 1}"))
+    m = mapped[mapped["flow"] != "instant"].copy()
     m["start"] = pd.to_datetime(m["start"])
     m["end"] = pd.to_datetime(m["end"])
-    rows = []
     for (line, flow), g in m.groupby(["line", "flow"]):
         ev = regime_starts(list(events.loc[events["line"] == line, "filed"]))
         spans = {k: gg.sort_values("filed") for k, gg in g.groupby(["span", "start", "end"])}
