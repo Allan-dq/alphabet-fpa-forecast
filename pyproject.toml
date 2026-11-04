@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fpa-forecast"
+version = "0.1.0"
+description = "Hierarchical quarterly revenue and P&L forecast for Alphabet from public SEC filings"
+requires-python = ">=3.10,<3.13"
+dependencies = []
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
