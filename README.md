@@ -137,7 +137,7 @@ Optional challenger (torch and a ~925 MB checkpoint): `pip install -e ".[timesfm
 | `assumptions.yaml`, `src/fpa_forecast/fpa.py` | Cost assumptions, depreciation driver, P&L, variance bridges, scenarios |
 | `reports/` | All outputs: markdown, CSV, charts, `exec_summary.pdf`. `reports/sql/` holds CSV extracts of the SQL views |
 | `docs/methodology.md` | Methods, selection rule, limitations |
-| `tests/` | 80+ tests, including SQL-vs-Python metric agreement, P&L/bridge identities and look-ahead checks |
+| `tests/` | 70+ tests, including SQL-vs-Python metric agreement, P&L/bridge identities and look-ahead checks |
 
 ## Data notes
 
